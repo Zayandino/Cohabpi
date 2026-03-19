@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Cohab Los Andes APJJ — Academia de Brazilian Jiu-Jitsu.">
+  <meta name="theme-color" content="#060B18">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cohab Los Andes</title>
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- SDKs -->
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+
+  <!-- Ambient Light Effect -->
+  <div class="ambient-light">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- Persistent Background Backdrop -->
+  <div class="bg-panorama">
+    <img src="assets/hero-bg.png" alt="Cordillera Background">
+    <div class="bg-panorama-gradient"></div>
+  </div>
+
+  <div class="app">
+
+    <!-- ===== SCREEN 0: LOGIN / AUTH ===== -->
+    <section id="screen-auth" class="screen-auth">
+      <img src="assets/logo-original.jpg" alt="Cohab Logo" class="auth-logo">
+      <div class="auth-glass">
+        <h1 class="auth-title">Acceso Alumnos</h1>
+        <p class="auth-subtitle">Portal oficial Cohab Los Andes</p>
+
+        <form id="auth-form" onsubmit="handleAuth(event)">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="login-email" class="form-input" placeholder="correo@ejemplo.com" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contraseña</label>
+            <input type="password" id="login-pass" class="form-input" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="auth-btn" id="auth-submit-btn">Ingresar</button>
+
+          <div style="margin-top: 20px; text-align: center; font-size: 0.85rem; color: var(--text-muted);">
+            <span id="auth-switch-text">¿No tienes cuenta?</span>
+            <a href="#" onclick="toggleAuthMode(event)" id="auth-switch-link"
+              style="color: var(--crimson-bright); font-weight: 700; text-decoration: none; margin-left: 5px;">Regístrate</a>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Main App Content (Hidden until login) -->
+    <div id="app-main-content">
+
+      <!-- ===== SCREEN 1: DASHBOARD ===== -->
+      <section id="screen-dashboard" class="screen active">
+
+        <!-- Hero Header -->
+        <header class="hero">
+
+          <div class="hero-content">
+            <h1 class="hero-title">
+              <span>COHAB</span>
+              LOS ANDES
+            </h1>
+            <img src="assets/logo-original.jpg" alt="Cohab Logo" class="hero-logo">
+          </div>
+        </header>
+
+        <div class="content">
+          <!-- Greeting -->
+          <div class="greeting-block">
+            <div class="greeting-hello">Bienvenido de vuelta</div>
+            <div class="greeting-name"><span id="user-display-name">[Alumno]</span> <span id="admin-badge"
+                class="admin-badge" style="display:none">ADMIN</span></div>
+          </div>
+
+          <!-- Family Quick Switcher -->
+          <div id="family-dashboard-switch" class="family-quick-switch" style="display:none">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Rank Progression Center -->
+          <div id="rank-center" class="rank-display-card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <span class="metric-label" style="margin-bottom:2px;">Grado Actual</span>
+                <h3 id="current-belt-name"
+                  style="font-family:var(--font-display); font-weight:900; color:white; font-size:1.1rem;">Cinturón
+                  Blanco</h3>
+              </div>
+              <div id="current-graus-text"
+                style="font-size:0.75rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">0 Graus
+              </div>
+            </div>
+
+            <div id="belt-preview" class="belt-visual belt-white">
+              <div class="belt-tip" id="belt-stripes-container">
+                <!-- Stripes Rendered by JS -->
+              </div>
+            </div>
+
+            <div class="progress-container">
+              <div class="progress-labels">
+                <span>Progreso a Siguiente Grado</span>
+                <span id="progress-percent-text">15%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div id="rank-progress-fill" class="progress-fill" style="width:15%"></div>
+              </div>
+            </div>
+
+
+          </div>
+
+          <!-- Attendance Card -->
+          <div class="attendance-card" id="attendance-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <div>
+                <span class="metric-label">Asistencia del Mes</span>
+                <h3 style="font-family:var(--font-display); font-weight:900; color:white; font-size:1.3rem;">
+                  <span id="attendance-count">0</span> <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">clases</span>
+                </h3>
+              </div>
+              <button class="checkin-btn" id="checkin-btn" onclick="handleCheckIn()">
+                ✅ Marcar Asistencia
+              </button>
+            </div>
+            <div class="week-calendar" id="week-calendar">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Status Card — AL DÍA -->
+          <div class="status-glass ok" id="status-card-dashboard">
+            <div class="status-row">
+              <div class="status-text-group">
+                <div class="status-badge ok">
+                  <span class="dot"></span> AL DÍA
+                </div>
+                <div class="status-main">Membresía Activa</div>
+                <div class="status-sub">Válida hasta: 10/05/2026</div>
+              </div>
+              <div class="status-icon-big">🛡️</div>
+            </div>
+          </div>
+
+
+          <!-- Novedades (dinámicas) -->
+          <div class="section-head">
+            <h2 class="section-label">Novedades</h2>
+          </div>
+
+          <div class="news-scroll" id="news-container">
+            <!-- Rendered by JS from cohab_news -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SCREEN 2: GESTIÓN DE PAGOS ===== -->
+      <section id="screen-pagos" class="screen">
+        <div class="top-bar">
+          <button class="icon-btn" onclick="navigateTo('dashboard')" aria-label="Volver">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div class="top-bar-title">Pagos</div>
+        </div>
+
+        <div class="content">
+          <div class="pagos-logo">
+            <img src="assets/logo-original.jpg" alt="Cohab Logo">
+          </div>
+
+          <!-- Enrollment Wizard (New intuitive flow) -->
+          <div id="enrollment-wizard">
+
+            <!-- STEP 1: WHO -->
+            <div class="step-container">
+              <div class="step-header">
+                <div class="step-num">1</div>
+                <h2 class="step-title">¿Quién va a entrenar?</h2>
+              </div>
+
+              <div class="member-list" id="member-selector">
+                <!-- Will be rendered by JS: Yo, Hijo 1, etc. -->
+                <div class="member-item active" onclick="selectMember('me')">
+                  <div class="member-avatar">🥋</div>
+                  <div class="member-name">Yo</div>
+                </div>
+                <button class="add-member-btn" onclick="addNewMember()">+</button>
+              </div>
+            </div>
+
+            <!-- STEP 2: WHAT -->
+            <div class="step-container" id="step-service-section">
+              <div class="step-header">
+                <div class="step-num">2</div>
+                <h2 class="step-title">Selecciona Disciplina</h2>
+              </div>
+              <div class="service-grid" id="service-catalog">
+                <!-- Rendered by JS: BJJ Adults, BJJ Kids, etc. -->
+              </div>
+            </div>
+
+            <!-- STEP 3: HOW LONG -->
+            <div class="step-container" id="step-plans-section" style="display:none">
+              <div class="step-header">
+                <div class="step-num">3</div>
+                <h2 class="step-title">Selecciona Duración</h2>
+              </div>
+
+              <div class="plans-grid">
+                <!-- 1 Mes -->
+                <div class="plan-card" onclick="selectFinalPlan(1)">
+                  <div class="plan-duration">1 Mes</div>
+                  <div class="plan-price-row">
+                    <span class="plan-price-new" id="price-1m">$0</span>
+                  </div>
+                </div>
+
+                <!-- 3 Meses -->
+                <div class="plan-card featured" onclick="selectFinalPlan(3)">
+                  <div class="plan-discount-tag">10% OFF</div>
+                  <div class="plan-duration">3 Meses</div>
+                  <div class="plan-price-row">
+                    <span class="plan-price-old" id="old-3m">$0</span>
+                    <span class="plan-price-new" id="new-3m">$0</span>
+                  </div>
+                </div>
+
+                <!-- 6 Meses -->
+                <div class="plan-card" onclick="selectFinalPlan(6)">
+                  <div class="plan-discount-tag">15% OFF</div>
+                  <div class="plan-duration">6 Meses</div>
+                  <div class="plan-price-row">
+                    <span class="plan-price-old" id="old-6m">$0</span>
+                    <span class="plan-price-new" id="new-6m">$0</span>
+                  </div>
+                </div>
+
+                <!-- 12 Meses -->
+                <div class="plan-card" onclick="selectFinalPlan(12)">
+                  <div class="plan-discount-tag">25% OFF</div>
+                  <div class="plan-duration">12 Meses</div>
+                  <div class="plan-price-row">
+                    <span class="plan-price-old" id="old-12m">$0</span>
+                    <span class="plan-price-new" id="new-12m">$0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Checkout Summary -->
+            <div id="checkout-summary" class="checkout-box" style="display:none">
+              <h3 class="checkout-title">Resumen de Inscripción</h3>
+              <div id="summary-items">
+                <!-- JS Injected rows -->
+              </div>
+              <div class="summary-total">
+                <span>Total a Pagar</span>
+                <span id="summary-total-price">$0</span>
+              </div>
+            </div>
+
+          </div> <!-- End enrollment-wizard -->
+
+          <!-- Mercado Pago Primary CTA -->
+          <div class="mp-card">
+            <img src="https://logotyp.us/files/mercado-pago.svg" class="mp-logo-white" alt="Mercado Pago">
+            <h2 class="mp-title">Pago Instantáneo</h2>
+            <p class="mp-desc">Paga tu membresía de forma segura con tarjetas de crédito, débito o dinero en cuenta.</p>
+            <button class="mp-btn" onclick="openMercadoPago()">
+              Pagar con Mercado Pago
+            </button>
+          </div>
+
+        </div>
+      </section>
+      <!-- ===== SCREEN 4: ADMIN (ONLY PROFESSOR) ===== -->
+      <section id="screen-servicios" class="screen">
+        <div class="top-bar">
+          <div class="top-bar-title">Panel de Administración</div>
+        </div>
+
+        <div class="content">
+          <!-- Metrics -->
+          <div class="admin-metrics" style="margin-top: 20px;">
+            <div class="metric-card">
+              <span class="metric-label">Recaudación Mes</span>
+              <span class="metric-value" id="admin-revenue">0</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Alumnos Activos</span>
+              <span class="metric-value" id="admin-active-count">0</span>
+            </div>
+          </div>
+
+          <!-- Section 1: Graduaciones -->
+          <div class="admin-form-glass">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-bright);">
+              🥋 Centro de Graduaciones
+            </h3>
+            <div id="admin-student-list" class="admin-student-grid">
+              <div class="loading-spinner">Cargando alumnos...</div>
+            </div>
+          </div>
+
+          <!-- Section 2: Mensualidades -->
+          <div class="admin-form-glass" style="margin-top: 20px;">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: #34D399;">
+              💰 Control de Mensualidades
+            </h3>
+            <div id="admin-payments-list" class="admin-student-grid">
+              <div class="loading-spinner">Cargando pagos...</div>
+            </div>
+          </div>
+
+          <!-- Section 3: Servicios -->
+          <div class="admin-form-glass" style="margin-top: 20px;">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-soft);">
+              ⚙️ Gestión de Clases
+            </h3>
+            <div class="admin-section">
+              <div class="admin-input-group">
+                <label>Nombre de la Disciplina</label>
+                <input type="text" id="new-service-name" class="admin-input" placeholder="ej: BJJ Adultos">
+              </div>
+              <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
+                <div class="admin-input-group">
+                  <label>Precio Base</label>
+                  <input type="number" id="new-service-price" class="admin-input" placeholder="45000">
+                </div>
+                <div class="admin-input-group">
+                  <label>Precio Oferta</label>
+                  <input type="number" id="new-service-discount" class="admin-input" placeholder="35000">
+                </div>
+              </div>
+              <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white;"
+                onclick="handleCreateService()">
+                + CREAR SERVICIO
+              </button>
+            </div>
+          </div>
+
+          <div id="admin-services-list" class="service-grid" style="margin-top:20px;">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Section 4: Novedades Admin -->
+          <div class="admin-form-glass" style="margin-top: 20px;">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--aurora);">
+              📢 Gestión de Novedades
+            </h3>
+            <div class="admin-section">
+              <div class="admin-metrics" style="grid-template-columns: 1fr auto; margin-bottom: 12px;">
+                <div class="admin-input-group">
+                  <label>Título</label>
+                  <input type="text" id="new-news-title" class="admin-input" placeholder="ej: Torneo Inter-Academias">
+                </div>
+                <div class="admin-input-group">
+                  <label>Emoji</label>
+                  <input type="text" id="new-news-emoji" class="admin-input" placeholder="🏆" style="width:60px; text-align:center;">
+                </div>
+              </div>
+              <div class="admin-input-group" style="margin-bottom: 16px;">
+                <label>Subtítulo / Fecha</label>
+                <input type="text" id="new-news-subtitle" class="admin-input" placeholder="ej: 15 de Abril">
+              </div>
+              <button class="auth-btn" style="background: linear-gradient(135deg, var(--aurora), #5B4FCF); color: white;"
+                onclick="handleCreateNews()">
+                + CREAR NOVEDAD
+              </button>
+            </div>
+            <div id="admin-news-list" style="margin-top:16px;">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Section 5: Videos Admin -->
+          <div class="admin-form-glass" style="margin-top: 20px;">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--ice);">
+              🎬 Gestión de Videos
+            </h3>
+            <div class="admin-section">
+              <div class="admin-input-group" style="margin-bottom: 12px;">
+                <label>Título del Video</label>
+                <input type="text" id="new-video-title" class="admin-input" placeholder="ej: Raspada de Mariposa">
+              </div>
+              <div class="admin-input-group" style="margin-bottom: 12px;">
+                <label>Descripción</label>
+                <input type="text" id="new-video-desc" class="admin-input" placeholder="Breve descripción de la técnica">
+              </div>
+              <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
+                <div class="admin-input-group">
+                  <label>Duración</label>
+                  <input type="text" id="new-video-duration" class="admin-input" placeholder="3:45 min">
+                </div>
+                <div class="admin-input-group">
+                  <label>Instructor</label>
+                  <input type="text" id="new-video-instructor" class="admin-input" placeholder="Prof. Andrés">
+                </div>
+              </div>
+              <div class="admin-input-group" style="margin-bottom: 12px;">
+                <label>URL Thumbnail</label>
+                <input type="text" id="new-video-thumb" class="admin-input" placeholder="assets/thumb-X.png o URL">
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom: 16px;">
+                <input type="checkbox" id="new-video-featured" style="width:18px; height:18px;">
+                <label for="new-video-featured" style="font-size:0.85rem; color:var(--text-muted);">Marcar como Video Destacado</label>
+              </div>
+              <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white;"
+                onclick="handleCreateVideo()">
+                + CREAR VIDEO
+              </button>
+            </div>
+            <div id="admin-videos-list" style="margin-top:16px;">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="screen-videoteca" class="screen">
+        <div class="top-bar">
+          <button class="icon-btn" onclick="navigateTo('dashboard')" aria-label="Volver">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div class="top-bar-title">Academia Virtual</div>
+        </div>
+
+        <!-- Featured Video (dynamic) -->
+        <div id="featured-video-container">
+          <!-- Rendered by JS -->
+        </div>
+
+        <div class="vid-info">
+          <p class="vid-desc" id="featured-video-desc">Cargando...</p>
+
+          <div class="section-head">
+            <h3 class="section-label">Biblioteca de Técnicas</h3>
+          </div>
+        </div>
+
+        <!-- Video Grid (dynamic) -->
+        <div class="thumb-grid" id="video-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </section>
+
+      <!-- ===== SCREEN 5: PERFIL ===== -->
+      <section id="screen-profile" class="screen">
+        <div class="top-bar">
+          <div class="top-bar-title">Mi Perfil</div>
+        </div>
+
+        <div class="content">
+          <!-- User Summary Card -->
+          <div class="admin-form-glass">
+            <div style="text-align: center; padding: 20px 0;">
+              <div class="profile-avatar-large">🥋</div>
+              <h2 id="profile-full-name-display" style="font-family:var(--font-display); margin-top:10px;">Cargando...
+              </h2>
+              <p id="profile-role-display"
+                style="font-size: 0.8rem; color: var(--crimson-bright); text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
+                Alumno</p>
+            </div>
+          </div>
+
+          <!-- Edit Profile Form -->
+          <div class="admin-form-glass" style="margin-top: 20px;">
+            <h3 style="font-family:var(--font-display); font-size:1rem; margin-bottom:16px; color: var(--text-muted);">
+              Datos Personales
+            </h3>
+            <form id="profile-form" onsubmit="handleUpdateProfile(event)">
+              <div class="admin-input-group">
+                <label>Nombre Completo</label>
+                <input type="text" id="profile-input-name" class="admin-input" placeholder="Tu nombre">
+              </div>
+              <div class="admin-input-group">
+                <label>Correo Electrónico (No modificable)</label>
+                <input type="email" id="profile-input-email" class="admin-input" readonly
+                  style="opacity: 0.6; cursor: not-allowed;">
+              </div>
+              <div class="admin-input-group">
+                <label>Teléfono / WhatsApp</label>
+                <input type="tel" id="profile-input-phone" class="admin-input" placeholder="+569 1234 5678">
+              </div>
+              <button type="submit" class="auth-btn" style="margin-top: 10px;">
+                GUARDAR CAMBIOS
+              </button>
+            </form>
+          </div>
+
+          <!-- Account Actions -->
+          <div style="margin-top: 30px; padding: 0 10px;">
+            <button onclick="handleLogout()" class="auth-btn"
+              style="background: rgba(255, 77, 77, 0.1); color: #FF6B6B; border: 1px solid rgba(255, 77, 77, 0.2); font-size: 0.9rem;">
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div> <!-- End app-main-content -->
+  </div> <!-- End app -->
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="nav-tab active" data-screen="dashboard" id="nav-home" aria-label="Inicio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </svg>
+      <span class="nav-tab-label">Inicio</span>
+    </button>
+    <button class="nav-tab" data-screen="pagos" id="nav-pagos" aria-label="Pagos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <line x1="2" y1="10" x2="22" y2="10" />
+      </svg>
+      <span class="nav-tab-label">Pagos</span>
+    </button>
+    <button class="nav-tab" data-screen="videoteca" id="nav-videoteca" aria-label="Academia">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <polygon points="23 7 16 12 23 17 23 7" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      </svg>
+      <span class="nav-tab-label">Academia</span>
+    </button>
+    <button class="nav-tab" data-screen="servicios" id="nav-servicios" aria-label="Servicios" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+      <span class="nav-tab-label">Admin</span>
+    </button>
+    <button class="nav-tab" data-screen="profile" id="nav-profile" aria-label="Perfil">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+      <span class="nav-tab-label">Perfil</span>
+    </button>
+  </nav>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Notificación</div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
