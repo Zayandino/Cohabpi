@@ -52,6 +52,9 @@
           <button type="submit" class="auth-btn" id="auth-submit-btn">Ingresar</button>
 
           <div style="margin-top: 20px; text-align: center; font-size: 0.85rem; color: var(--text-muted);">
+            <div style="margin-bottom: 12px;">
+              <a href="#" onclick="showRecoveryModal(event)" style="color: var(--text-light); text-decoration: none; font-weight: 500; font-size: 0.8rem;">¿Olvidaste tu contraseña?</a>
+            </div>
             <span id="auth-switch-text">¿No tienes cuenta?</span>
             <a href="#" onclick="toggleAuthMode(event)" id="auth-switch-link"
               style="color: var(--crimson-bright); font-weight: 700; text-decoration: none; margin-left: 5px;">Regístrate</a>
@@ -570,6 +573,39 @@
 
   <!-- Toast -->
   <div class="toast" id="toast">Notificación</div>
+
+  <!-- Modal Recuperar Contraseña -->
+  <div class="modal-overlay" id="recovery-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(8px); z-index:999; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="modal-content" style="background:var(--bg-glass-strong); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-glass); width:90%; max-width:350px;">
+      <h3 style="font-family:var(--font-display); font-size: 1.2rem; margin-bottom:8px; color: var(--text-white);">Recuperar Contraseña</h3>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:20px; line-height: 1.4;">Ingresa el correo con el que te registraste para recibir un enlace seguro de recuperación.</p>
+      
+      <div class="form-group">
+        <label class="form-label" style="text-align:left; display:block; margin-bottom:6px;">Correo Electrónico</label>
+        <input type="email" id="recovery-email" class="form-input" placeholder="correo@ejemplo.com" style="margin-bottom:15px;" required>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top: 10px;">
+        <button class="auth-btn" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color: var(--text-light);" onclick="closeRecoveryModal()">Cancelar</button>
+        <button class="auth-btn" id="btn-send-recovery" onclick="sendRecoveryEmail()">Enviar Enlace</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Nueva Contraseña (Desde el enlace del correo) -->
+  <div class="modal-overlay" id="new-password-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(8px); z-index:999; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="modal-content" style="background:var(--bg-glass-strong); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-glass); width:90%; max-width:350px;">
+      <h3 style="font-family:var(--font-display); font-size: 1.2rem; margin-bottom:8px; color: var(--text-white);">Restablecer Contraseña</h3>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:20px; line-height: 1.4;">Ingresa tu nueva clave de acceso.</p>
+      
+      <div class="form-group">
+        <label class="form-label" style="text-align:left; display:block; margin-bottom:6px;">Nueva Contraseña</label>
+        <input type="password" id="new-password-input" class="form-input" placeholder="••••••••" style="margin-bottom:15px;" required>
+      </div>
+
+      <button class="auth-btn" id="btn-save-new-password" onclick="saveNewPassword()" style="margin-top: 10px;">Guardar Contraseña</button>
+    </div>
+  </div>
 
   <script src="config.js"></script>
   <script src="app.js"></script>

@@ -29,8 +29,17 @@ window.addEventListener('load', async () => {
   });
 
   // Check Session
-  const { data: { session } } = await _supabase.auth.getSession();
-  if (session) {
+  const { data: { session }, error: sessionError } = await _supabase.auth.getSession();
+  
+  // Check Password Recovery Hash Map
+  const hash = window.location.hash;
+  if (hash && hash.includes('type=recovery')) {
+    // Show new password modal
+    const newPassModal = document.getElementById('new-password-modal');
+    if (newPassModal) newPassModal.style.display = 'flex';
+    // Clear hash to prevent infinite loop on reload
+    window.history.replaceState(null, null, ' ');
+  } else if (session) {
     const { user } = session;
     const { data: profile } = await _supabase
       .from('cohab_profiles')
@@ -74,6 +83,81 @@ async function handleAuth(event) {
   } else {
     handleSignup(event);
   }
+}
+
+// --- Password Recovery ---
+function showRecoveryModal(event) {
+  event.preventDefault();
+  document.getElementById('recovery-modal').style.display = 'flex';
+}
+
+function closeRecoveryModal() {
+  document.getElementById('recovery-modal').style.display = 'none';
+  document.getElementById('recovery-email').value = '';
+}
+
+async function sendRecoveryEmail() {
+  const email = document.getElementById('recovery-email').value;
+  if (!email) {
+    showToast('⚠️ Ingresa tu correo electrónico');
+    return;
+  }
+  
+  const btn = document.getElementById('btn-send-recovery');
+  btn.textContent = 'Enviando...';
+  btn.disabled = true;
+
+  const { data, error } = await _supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+
+  if (error) {
+    showToast(`❌ Error: ${error.message}`);
+  } else {
+    showToast('✅ ¡Enlace enviado! Revisa tu bandeja de entrada o spam.');
+    closeRecoveryModal();
+  }
+  
+  btn.textContent = 'Enviar Enlace';
+  btn.disabled = false;
+}
+
+async function saveNewPassword() {
+  const newPassword = document.getElementById('new-password-input').value;
+  if (!newPassword || newPassword.length < 6) {
+    showToast('⚠️ La contraseña debe tener al menos 6 caracteres');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-new-password');
+  btn.textContent = 'Guardando...';
+  btn.disabled = true;
+
+  const { data, error } = await _supabase.auth.updateUser({
+    password: newPassword
+  });
+
+  if (error) {
+    showToast(`❌ Error: ${error.message}`);
+  } else {
+    showToast('✅ Contraseña actualizada correctamente. Ingresando...');
+    document.getElementById('new-password-modal').style.display = 'none';
+    
+    // Check if session exists (Supabase auto-logs-in user on recovery click)
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (session) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } else {
+      setTimeout(() => {
+        showToast('Inicia sesión con tu nueva contraseña');
+      }, 1500);
+    }
+  }
+  
+  btn.textContent = 'Guardar Contraseña';
+  btn.disabled = false;
 }
 
 async function handleSignup(event) {
