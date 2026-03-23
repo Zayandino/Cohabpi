@@ -528,14 +528,6 @@
 
   <!-- Bottom Navigation -->
   <nav class="bottom-nav" id="bottom-nav">
-    <button class="nav-tab active" data-screen="dashboard" id="nav-home" aria-label="Inicio">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-        stroke-linejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
-      </svg>
-      <span class="nav-tab-label">Inicio</span>
-    </button>
     <button class="nav-tab" data-screen="pagos" id="nav-pagos" aria-label="Pagos">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round">
@@ -551,6 +543,11 @@
         <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
       </svg>
       <span class="nav-tab-label">Academia</span>
+    </button>
+    <button class="nav-tab active nav-center-btn" data-screen="dashboard" id="nav-home" aria-label="Inicio">
+      <figure class="nav-logo-wrap">
+        <img src="assets/logo-original.jpg" alt="Cohab Logo" class="nav-center-logo">
+      </figure>
     </button>
     <button class="nav-tab" data-screen="servicios" id="nav-servicios" aria-label="Servicios" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
