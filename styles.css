@@ -77,12 +77,12 @@ body {
 
 .bg-panorama img {
   width: 100%;
-  height: 60%;
-  /* Top half has the mountains */
+  height: 65%;
   object-fit: cover;
-  object-position: center 30%;
-  opacity: 0.6;
-  /* Balanced for all screens */
+  object-position: top center;
+  opacity: 0.75;
+  filter: saturate(1.2) contrast(1.1);
+  mix-blend-mode: color-dodge;
 }
 
 .bg-panorama-gradient {
@@ -92,8 +92,8 @@ body {
   width: 100%;
   height: 100%;
   background: linear-gradient(180deg,
-      rgba(6, 11, 24, 0.5) 0%,
-      rgba(6, 11, 24, 0.8) 35%,
+      rgba(6, 11, 24, 0.1) 0%,
+      rgba(6, 11, 24, 0.7) 35%,
       var(--bg-deep) 65%);
 }
 
@@ -204,13 +204,14 @@ body {
 }
 
 .hero-logo {
-  width: 78px;
-  height: 78px;
-  object-fit: contain;
+  width: 85px;
+  height: 85px;
+  object-fit: cover;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: white;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), 0 0 10px rgba(255, 255, 255, 0.1);
+  border: 2px solid var(--crimson-bright);
+  background: var(--bg-deep);
+  box-shadow: 0 5px 20px rgba(0,0,0,0.8), 0 0 20px var(--crimson-glow);
+  padding: 2px;
 }
 
 .hero-title {
@@ -554,12 +555,13 @@ body {
 .pagos-logo img {
   width: 100px;
   height: 100px;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: white;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  border: 2px solid var(--crimson-bright);
+  background: var(--bg-deep);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6), 0 0 15px var(--crimson-glow);
   margin-bottom: 8px;
+  padding: 2px;
 }
 
 .bank-glass {
