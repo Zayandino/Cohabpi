@@ -6,8 +6,7 @@ let authMode = 'login'; // 'login' or 'register'
 
 // Enrollment State
 let familyMembers = [
-  { id: 'me', name: 'Yo', icon: '🥋', belt: 'blue', graus: 2, progress: 65, attendance: [1, 0, 1, 0, 1, 0, 0] },
-  { id: 'son1', name: 'Nico (Hijo)', icon: '👦', belt: 'white', graus: 1, progress: 30, attendance: [0, 1, 1, 1, 0, 0, 0] }
+  { id: 'me', name: 'Yo', icon: '🥋', belt: 'white', graus: 0, progress: 0, attendance: [] }
 ];
 let currentMemberId = 'me';
 let dashboardMemberId = 'me';
@@ -47,9 +46,9 @@ window.addEventListener('load', async () => {
       .eq('id', user.id)
       .single();
 
-    const displayName = profile?.full_name || user.email;
+    const displayName = profile?.full_name || "Alumno";
     const isAdmin = profile?.role === 'admin';
-    loginSuccess(displayName, isAdmin, user.id);
+    loginSuccess(displayName, isAdmin, user.id, user.email);
   }
 });
 
@@ -222,13 +221,13 @@ async function handleLogin(event) {
     .eq('id', data.user.id)
     .single();
 
-  const displayName = profile?.full_name || email;
+  const displayName = profile?.full_name || "Alumno";
   const isAdmin = profile?.role === 'admin';
-  loginSuccess(displayName, isAdmin, data.user.id);
+  loginSuccess(displayName, isAdmin, data.user.id, email);
 }
 
-function loginSuccess(name, isAdmin, userId) {
-  currentUser = { name, isAdmin, id: userId };
+async function loginSuccess(name, isAdmin, userId, email) {
+  currentUser = { name, isAdmin, id: userId, email };
 
   // Update UI Elements
   const userDisplay = document.getElementById('user-display-name');
@@ -254,15 +253,8 @@ function loginSuccess(name, isAdmin, userId) {
   document.getElementById('app-main-content').style.display = 'block';
   document.getElementById('bottom-nav').style.display = 'flex';
 
-  // Sync the "me" member object for the dashboard
-  const meIndex = familyMembers.findIndex(m => m.id === 'me');
-  if (meIndex !== -1) {
-    familyMembers[meIndex].name = name.split(' ')[0];
-  }
-
-  // Visual Rank — use member data or defaults
-  const memberData = familyMembers[meIndex] || { belt: 'white', graus: 0, progress: 0 };
-  updateRankDisplay(memberData);
+  // Fetch Family Data dynamically instead of relying on hardcoded array
+  await fetchFamilyMembers();
 
   // Route: admins go to admin panel, students to dashboard
   if (isAdmin) {
@@ -878,26 +870,49 @@ function updateRankDisplay(member) {
 async function fetchFamilyMembers() {
   if (!currentUser) return;
 
+  const { data: myProfile } = await _supabase
+    .from('cohab_profiles')
+    .select('belt, graus')
+    .eq('id', currentUser.id)
+    .single();
+
+  const myBelt = myProfile?.belt || 'white';
+  const myGraus = myProfile?.graus || 0;
+
+  const me = { 
+    id: 'me', 
+    name: currentUser.name.split(' ')[0], 
+    icon: '🥋', 
+    belt: myBelt, 
+    graus: myGraus, 
+    progress: 0, 
+    attendance: [] 
+  };
+
   const { data, error } = await _supabase
     .from('cohab_family_members')
     .select('*')
     .eq('parent_id', currentUser.id);
 
-  if (!error && data.length > 0) {
-    // Keep 'me' at the start
-    const me = familyMembers.find(m => m.id === 'me');
+  if (!error && data) {
     familyMembers = [me, ...data.map(d => ({
       id: d.id,
       name: d.name,
-      icon: d.icon || '👦',
-      belt: d.belt,
-      graus: d.graus,
-      progress: d.progress
+      icon: d.relationship === 'Hija' ? '👧' : (d.relationship === 'Hijo' ? '👦' : '👤'),
+      belt: 'white',
+      graus: 0,
+      progress: 0,
+      attendance: []
     }))];
-
-    renderMemberSelector();
-    renderFamilyDashboardSwitch();
+  } else {
+    familyMembers = [me];
   }
+
+  renderMemberSelector();
+  renderFamilyDashboardSwitch();
+
+  const dashboardMember = familyMembers.find(m => m.id === dashboardMemberId) || familyMembers[0];
+  updateRankDisplay(dashboardMember);
 }
 
 function renderMemberSelector() {
@@ -939,7 +954,7 @@ async function addNewMember() {
   const { data, error } = await _supabase
     .from('cohab_family_members')
     .insert([
-      { parent_id: currentUser.id, name: name, icon: '👦' }
+      { parent_id: currentUser.id, name: name, relationship: 'Familiar' }
     ])
     .select();
 
@@ -952,15 +967,16 @@ async function addNewMember() {
   familyMembers.push({
     id: d.id,
     name: d.name,
-    icon: d.icon || '👦',
-    belt: d.belt,
-    graus: d.graus,
-    progress: d.progress
+    icon: '👦',
+    belt: 'white',
+    graus: 0,
+    progress: 0,
+    attendance: []
   });
 
   selectMember(d.id);
   renderFamilyDashboardSwitch();
-  showToast(`✅ ${name} añadido a tu clan.`);
+  showToast(`✅ ${name} añadido a tu cuenta.`);
 }
 
 function renderServiceCatalog() {

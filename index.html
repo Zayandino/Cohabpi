@@ -27,7 +27,7 @@
 
   <!-- Persistent Background Backdrop -->
   <div class="bg-panorama">
-    <img src="assets/bg-vitral.png" alt="Stained Glass BJJ">
+    <img src="assets/bg-vitral-new.png" alt="Stained Glass BJJ">
     <div class="bg-panorama-gradient"></div>
   </div>
 
@@ -472,53 +472,72 @@
       <!-- ===== SCREEN 5: PERFIL ===== -->
       <section id="screen-profile" class="screen">
         <div class="top-bar">
-          <div class="top-bar-title">Mi Perfil</div>
+          <div class="top-bar-title">Area Personal</div>
         </div>
 
-        <div class="content">
-          <!-- User Summary Card -->
-          <div class="admin-form-glass">
-            <div style="text-align: center; padding: 20px 0;">
+        <div class="content" style="padding-top: 20px;">
+          <!-- Premium User Identity Card -->
+          <div class="profile-hero-card">
+            <div class="profile-hero-bg"></div>
+            <div class="profile-avatar-container">
+              <div class="profile-avatar-glow"></div>
               <div class="profile-avatar-large">🥋</div>
-              <h2 id="profile-full-name-display" style="font-family:var(--font-display); margin-top:10px;">Cargando...
-              </h2>
-              <p id="profile-role-display"
-                style="font-size: 0.8rem; color: var(--crimson-bright); text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
-                Alumno</p>
+            </div>
+            <div class="profile-hero-info">
+              <h2 id="profile-full-name-display" style="font-family:var(--font-display); margin: 0; font-size: 1.6rem; color: #fff;">Cargando...</h2>
+              <p id="profile-role-display" style="margin: 5px 0 0 0; font-size: 0.85rem; color: var(--aurora); text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Alumno</p>
             </div>
           </div>
 
           <!-- Edit Profile Form -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1rem; margin-bottom:16px; color: var(--text-muted);">
-              Datos Personales
-            </h3>
-            <form id="profile-form" onsubmit="handleUpdateProfile(event)">
-              <div class="admin-input-group">
-                <label>Nombre Completo</label>
-                <input type="text" id="profile-input-name" class="admin-input" placeholder="Tu nombre">
+          <form id="profile-form" class="profile-settings-form" onsubmit="handleUpdateProfile(event)" style="margin-top: 25px;">
+            <h3 class="settings-title">Datos Personales</h3>
+            
+            <div class="settings-input-group">
+              <div class="settings-input-icon">👤</div>
+              <div class="settings-input-wrapper">
+                <label>Nombre de Usuario</label>
+                <input type="text" id="profile-input-name" placeholder="Tu nombre real">
               </div>
-              <div class="admin-input-group">
-                <label>Correo Electrónico (No modificable)</label>
-                <input type="email" id="profile-input-email" class="admin-input" readonly
-                  style="opacity: 0.6; cursor: not-allowed;">
+            </div>
+
+            <div class="settings-input-group readonly">
+              <div class="settings-input-icon">✉️</div>
+              <div class="settings-input-wrapper">
+                <label>Correo Asociado</label>
+                <input type="email" id="profile-input-email" readonly placeholder="Cargando...">
               </div>
-              <div class="admin-input-group">
+            </div>
+
+            <div class="settings-input-group">
+              <div class="settings-input-icon">📱</div>
+              <div class="settings-input-wrapper">
                 <label>Teléfono / WhatsApp</label>
-                <input type="tel" id="profile-input-phone" class="admin-input" placeholder="+569 1234 5678">
+                <input type="tel" id="profile-input-phone" placeholder="+569 1234 5678">
               </div>
-              <button type="submit" class="auth-btn" style="margin-top: 10px;">
+            </div>
+
+            <!-- Botones intergrados -->
+            <div class="profile-actions-row">
+              <button type="submit" class="auth-btn btn-save-profile">
                 GUARDAR CAMBIOS
               </button>
-            </form>
-          </div>
+            </div>
+          </form>
 
-          <!-- Account Actions -->
-          <div style="margin-top: 30px; padding: 0 10px;">
-            <button onclick="handleLogout()" class="auth-btn"
-              style="background: rgba(255, 77, 77, 0.1); color: #FF6B6B; border: 1px solid rgba(255, 77, 77, 0.2); font-size: 0.9rem;">
-              Cerrar Sesión
-            </button>
+          <!-- Danger Zone -->
+          <div class="danger-zone-card" style="margin-top: 30px; margin-bottom: 30px;">
+             <div class="danger-text">
+               <h4>Sesión Activa</h4>
+               <p>Cierra la sesión para proteger tus datos.</p>
+             </div>
+             <button onclick="handleLogout()" class="btn-logout-icon">
+               <svg viewBox="0 0 24 24" fill="none" width="20" height="20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                 <polyline points="16 17 21 12 16 7"></polyline>
+                 <line x1="21" y1="12" x2="9" y2="12"></line>
+               </svg>
+             </button>
           </div>
         </div>
       </section>
