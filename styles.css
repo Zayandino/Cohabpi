@@ -345,12 +345,28 @@ body {
   opacity: 0.5;
 }
 
-.status-glass.debt {
+.status-glass.warning {
+  border-color: rgba(245, 158, 11, 0.25);
+  box-shadow: 0 4px 30px rgba(245, 158, 11, 0.1), inset 0 0 30px rgba(245, 158, 11, 0.03);
+}
+
+.status-glass.warning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #F59E0B, transparent);
+  opacity: 0.5;
+}
+
+.status-glass.danger {
   border-color: rgba(255, 77, 77, 0.25);
   box-shadow: 0 4px 30px rgba(255, 77, 77, 0.1), inset 0 0 30px rgba(255, 77, 77, 0.03);
 }
 
-.status-glass.debt::before {
+.status-glass.danger::before {
   content: '';
   position: absolute;
   top: 0;
@@ -395,7 +411,13 @@ body {
   box-shadow: 0 0 8px var(--green-glow);
 }
 
-.status-badge.debt {
+.status-badge.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.status-badge.danger {
   background: rgba(255, 77, 77, 0.1);
   color: #FF6B6B;
   border: 1px solid rgba(255, 77, 77, 0.2);
