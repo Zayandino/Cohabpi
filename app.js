@@ -46,17 +46,19 @@ window.addEventListener('load', async () => {
       .eq('id', user.id)
       .single();
 
-    let displayName = profile?.full_name || user.email;
-    if (displayName && displayName.includes('@')) {
-      displayName = displayName.split('@')[0].replace(/[._-]/g, ' ');
-      displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+    let displayName = profile?.full_name;
+    if (!displayName || displayName.trim() === '') {
+      displayName = '';
     }
     
     const isAdmin = profile?.role === 'admin' || user.email === 'ambler.eduardo@gmail.com';
     
-    // Auto-fix role in DB if possible
-    if (user.email === 'ambler.eduardo@gmail.com' && profile?.role !== 'admin') {
-      _supabase.from('cohab_profiles').update({ role: 'admin' }).eq('id', user.id).then();
+    // Hardcode name and try to fix role if needed
+    if (user.email === 'ambler.eduardo@gmail.com') {
+      if (displayName === '') displayName = 'Eduardo Javier Ambler Rios';
+      if (profile?.role !== 'admin') {
+        _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', user.id).then();
+      }
     }
 
     loginSuccess(displayName, isAdmin, user.id, user.email);
@@ -93,6 +95,15 @@ async function handleAuth(event) {
   } else {
     handleSignup(event);
   }
+}
+
+// --- Modal Dialogs ---
+function openProfileEditModal() {
+  document.getElementById('profile-edit-modal').style.display = 'flex';
+}
+
+function closeProfileEditModal() {
+  document.getElementById('profile-edit-modal').style.display = 'none';
 }
 
 // --- Password Recovery ---
@@ -232,17 +243,19 @@ async function handleLogin(event) {
     .eq('id', data.user.id)
     .single();
 
-  let displayName = profile?.full_name || email;
-  if (displayName && displayName.includes('@')) {
-    displayName = displayName.split('@')[0].replace(/[._-]/g, ' ');
-    displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+  let displayName = profile?.full_name;
+  if (!displayName || displayName.trim() === '') {
+    displayName = '';
   }
 
   const isAdmin = profile?.role === 'admin' || email === 'ambler.eduardo@gmail.com';
   
-  // Auto-fix role in DB if possible
-  if (email === 'ambler.eduardo@gmail.com' && profile?.role !== 'admin') {
-    _supabase.from('cohab_profiles').update({ role: 'admin' }).eq('id', data.user.id).then();
+  // Hardcode name and try to fix role if needed
+  if (email === 'ambler.eduardo@gmail.com') {
+    if (displayName === '') displayName = 'Eduardo Javier Ambler Rios';
+    if (profile?.role !== 'admin') {
+      _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', data.user.id).then();
+    }
   }
 
   loginSuccess(displayName, isAdmin, data.user.id, email);
