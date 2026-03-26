@@ -46,8 +46,19 @@ window.addEventListener('load', async () => {
       .eq('id', user.id)
       .single();
 
-    const displayName = profile?.full_name || "Alumno";
-    const isAdmin = profile?.role === 'admin';
+    let displayName = profile?.full_name || user.email;
+    if (displayName && displayName.includes('@')) {
+      displayName = displayName.split('@')[0].replace(/[._-]/g, ' ');
+      displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    const isAdmin = profile?.role === 'admin' || user.email === 'ambler.eduardo@gmail.com';
+    
+    // Auto-fix role in DB if possible
+    if (user.email === 'ambler.eduardo@gmail.com' && profile?.role !== 'admin') {
+      _supabase.from('cohab_profiles').update({ role: 'admin' }).eq('id', user.id).then();
+    }
+
     loginSuccess(displayName, isAdmin, user.id, user.email);
   }
 });
@@ -221,8 +232,19 @@ async function handleLogin(event) {
     .eq('id', data.user.id)
     .single();
 
-  const displayName = profile?.full_name || "Alumno";
-  const isAdmin = profile?.role === 'admin';
+  let displayName = profile?.full_name || email;
+  if (displayName && displayName.includes('@')) {
+    displayName = displayName.split('@')[0].replace(/[._-]/g, ' ');
+    displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  const isAdmin = profile?.role === 'admin' || email === 'ambler.eduardo@gmail.com';
+  
+  // Auto-fix role in DB if possible
+  if (email === 'ambler.eduardo@gmail.com' && profile?.role !== 'admin') {
+    _supabase.from('cohab_profiles').update({ role: 'admin' }).eq('id', data.user.id).then();
+  }
+
   loginSuccess(displayName, isAdmin, data.user.id, email);
 }
 
