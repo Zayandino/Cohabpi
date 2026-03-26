@@ -293,7 +293,7 @@ async function loadProfileData() {
   const roleDisplay = document.getElementById('profile-role-display');
 
   // Load from current session user
-  emailInput.value = currentUser.email;
+  emailInput.value = currentUser.email || 'Sin correo asociado';
 
   // Fetch profile from DB to get name and phone
   const { data: profile, error } = await _supabase
@@ -1557,4 +1557,74 @@ function renderAdminVideosList() {
       <button class="delete-btn" onclick="handleDeleteVideo('${v.id}')">🗑️</button>
     </div>
   `).join('');
+}
+
+// =====================================================
+// --- MERCADOPAGO CHECKOUT INTEGRATION ---
+// =====================================================
+
+async function startCheckoutMp() {
+  if (!currentUser) return;
+  
+  const selectedIds = Object.keys(enrollmentCart);
+  if (selectedIds.length === 0) {
+    showToast("⚠️ El carrito está vacío");
+    return;
+  }
+
+  showToast("Generando pago seguro...");
+  const btn = document.querySelector('.mp-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.textContent = 'Procesando...';
+  }
+
+  try {
+    // Procesamos el primer miembro del carrito
+    const memberId = selectedIds[0]; 
+    const selection = enrollmentCart[memberId];
+
+    // Obtenemos el ID del servicio
+    const { data: serviceData } = await _supabase
+      .from('cohab_services')
+      .select('id')
+      .eq('name', selection.service.name)
+      .single();
+
+    const serviceId = serviceData?.id || "default";
+
+    const bodyData = {
+      items: [{
+        id: serviceId,
+        title: `Plan ${selection.service.name} (${selection.months} Meses)`,
+        quantity: 1,
+        unit_price: selection.price
+      }],
+      profile_id: memberId,
+      service_id: serviceId,
+      months: selection.months,
+      origin_url: window.location.origin
+    };
+
+    const { data, error } = await _supabase.functions.invoke('create-preference', {
+      body: bodyData
+    });
+
+    if (error) throw error;
+    
+    if (data?.init_point) {
+      window.location.href = data.init_point;
+    } else {
+      throw new Error("No se devolvió la URL de pago");
+    }
+  } catch (err) {
+    console.error("Error Checkout MP:", err);
+    showToast("❌ Error al conectar con Mercado Pago");
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.textContent = 'Pagar con Mercado Pago';
+    }
+  }
 }

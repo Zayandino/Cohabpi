@@ -79,11 +79,11 @@ body {
   width: 100%;
   height: 65%;
   object-fit: cover;
-  object-position: top center;
+  object-position: center top;
   opacity: 0.75;
   filter: saturate(1.2) contrast(1.1);
   mix-blend-mode: color-dodge;
-  transform: scale(1.1); /* Hides the X crop from the top right edge */
+  transform: scale(1.25) translate(-3%, -3%); /* Strongly hides the X artifact at top right */
 }
 
 /* Cover remaining artifacts in the top right just in case */
@@ -92,9 +92,9 @@ body {
   position: absolute;
   top: 0;
   right: 0;
-  width: 15vw;
-  height: 15vw;
-  background: radial-gradient(circle at top right, var(--bg-deep) 10%, transparent 60%);
+  width: 30vw;
+  height: 30vw;
+  background: radial-gradient(circle at top right, var(--bg-deep) 35%, transparent 70%);
   pointer-events: none;
 }
 
@@ -2466,3 +2466,113 @@ body {
 .status-glass.danger { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 15px rgba(239, 68, 68, 0.1); }
 .status-badge.danger { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
 .status-badge.danger .dot { background: #EF4444; box-shadow: 0 0 8px #EF4444; }
+
+/* === PERFIL: FORMULARIO GLASSMORPHISM === */
+.profile-settings-form {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+.profile-settings-form::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--crimson-glow), transparent);
+}
+
+.settings-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin-bottom: 20px;
+  color: var(--text-white);
+}
+
+.settings-input-group {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  transition: all 0.3s var(--ease-out);
+}
+
+.settings-input-group:focus-within {
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 2px rgba(0, 180, 216, 0.15);
+  background: rgba(10, 17, 40, 0.6);
+}
+
+.settings-input-icon {
+  font-size: 1.25rem;
+  margin-right: 14px;
+  opacity: 0.9;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+
+.settings-input-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-input-wrapper label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.settings-input-wrapper input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-white);
+  font-size: 0.95rem;
+  font-weight: 500;
+  width: 100%;
+}
+
+.settings-input-wrapper input::placeholder {
+  color: var(--text-dim);
+}
+
+.settings-input-group.readonly {
+  opacity: 0.6;
+}
+.settings-input-group.readonly:focus-within {
+  border-color: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+}
+
+.profile-actions-row {
+  margin-top: 24px;
+}
+.btn-save-profile {
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 1.5px;
+  background: linear-gradient(135deg, var(--crimson-deep), var(--crimson));
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 15px var(--crimson-glow);
+  transition: all 0.3s var(--ease-out);
+}
+.btn-save-profile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 180, 216, 0.4);
+}
