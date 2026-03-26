@@ -841,6 +841,7 @@ function switchDashboardView(id) {
   renderFamilyDashboardSwitch();
   const member = familyMembers.find(m => m.id === id);
   updateRankDisplay(member);
+  updateDashboardStatus(member.id);
 }
 
 function updateRankDisplay(member) {
@@ -916,6 +917,77 @@ async function fetchFamilyMembers() {
 
   const dashboardMember = familyMembers.find(m => m.id === dashboardMemberId) || familyMembers[0];
   updateRankDisplay(dashboardMember);
+  updateDashboardStatus(dashboardMember.id);
+}
+
+async function updateDashboardStatus(memberId) {
+  const card = document.getElementById('status-card-dashboard');
+  const badge = document.getElementById('status-badge-dashboard');
+  const badgeText = document.getElementById('status-badge-text');
+  const mainText = document.getElementById('status-main-text');
+  const subText = document.getElementById('status-sub-text');
+  const icon = document.getElementById('status-icon-dashboard');
+
+  if (!card) return;
+
+  // Clear previous colors
+  card.className = 'status-glass';
+  badge.className = 'status-badge';
+
+  try {
+    const { data: subs, error } = await _supabase
+      .from('cohab_subscriptions')
+      .select('end_date, status')
+      .eq('profile_id', memberId)
+      .eq('status', 'active')
+      .order('end_date', { ascending: false })
+      .limit(1);
+
+    if (error || !subs || subs.length === 0) {
+      card.classList.add('danger');
+      badge.classList.add('danger');
+      badgeText.textContent = 'INACTIVA';
+      mainText.textContent = 'Sin Membresía';
+      subText.textContent = 'Regulariza tus pagos';
+      icon.textContent = '⚠️';
+      return;
+    }
+
+    const endTime = Date.parse(subs[0].end_date + 'T00:00:00');
+    const endDate = new Date(endTime);
+    const endStr = String(endDate.getDate()).padStart(2,'0') + '/' + String(endDate.getMonth()+1).padStart(2,'0') + '/' + endDate.getFullYear();
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const diffTime = endDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      card.classList.add('danger');
+      badge.classList.add('danger');
+      badgeText.textContent = 'VENCIDA';
+      mainText.textContent = 'Membresía Vencida';
+      subText.textContent = `Venció el: ${endStr}`;
+      icon.textContent = '⛔';
+    } else if (diffDays <= 1) {
+      card.classList.add('warning');
+      badge.classList.add('warning');
+      badgeText.textContent = 'POR VENCER';
+      mainText.textContent = 'Pago Pendiente';
+      subText.textContent = `Vence ${diffDays === 0 ? 'hoy' : 'mañana'}`;
+      icon.textContent = '⏳';
+    } else {
+      card.classList.add('ok');
+      badge.classList.add('ok');
+      badgeText.textContent = 'AL DÍA';
+      mainText.textContent = 'Membresía Activa';
+      subText.textContent = `Válida hasta: ${endStr}`;
+      icon.textContent = '🛡️';
+    }
+  } catch (err) {
+    console.error('Error fetching subscription status:', err);
+  }
 }
 
 function renderMemberSelector() {

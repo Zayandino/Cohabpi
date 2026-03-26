@@ -2431,3 +2431,16 @@ body {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
+/* ===== STATUS CARD DYNAMIC COLORS ===== */
+.status-glass.ok { border-color: rgba(52, 211, 153, 0.4); box-shadow: 0 0 15px rgba(52, 211, 153, 0.1); }
+.status-badge.ok { background: rgba(52, 211, 153, 0.2); color: #34D399; }
+.status-badge.ok .dot { background: #34D399; box-shadow: 0 0 8px #34D399; }
+
+.status-glass.warning { border-color: rgba(251, 191, 36, 0.4); box-shadow: 0 0 15px rgba(251, 191, 36, 0.1); }
+.status-badge.warning { background: rgba(251, 191, 36, 0.2); color: #FBBF24; }
+.status-badge.warning .dot { background: #FBBF24; box-shadow: 0 0 8px #FBBF24; }
+
+.status-glass.danger { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 15px rgba(239, 68, 68, 0.1); }
+.status-badge.danger { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
+.status-badge.danger .dot { background: #EF4444; box-shadow: 0 0 8px #EF4444; }
