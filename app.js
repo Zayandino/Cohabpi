@@ -380,6 +380,9 @@ function navigateTo(screenName) {
 
     if (screenName === 'dashboard') {
       fetchAttendance();
+    }
+
+    if (screenName === 'novedades') {
       fetchNews();
     }
 

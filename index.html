@@ -158,14 +158,16 @@
               <div class="status-icon-big">🛡️</div>
             </div>
           </div>
+        </div>
+      </section>
 
-
-          <!-- Novedades (dinámicas) -->
-          <div class="section-head">
-            <h2 class="section-label">Novedades</h2>
-          </div>
-
-          <div class="news-scroll" id="news-container">
+      <!-- ===== SCREEN 6: NOVEDADES ===== -->
+      <section id="screen-novedades" class="screen">
+        <div class="top-bar">
+          <div class="top-bar-title">Muro de Noticias</div>
+        </div>
+        <div class="content" style="padding-top: 15px;">
+          <div class="news-grid" id="news-container">
             <!-- Rendered by JS from cohab_news -->
           </div>
         </div>
@@ -567,6 +569,15 @@
       <div class="nav-logo-wrap">
         <img src="assets/logo-original.jpg" alt="Cohab Logo" class="nav-center-logo">
       </div>
+    </button>
+    <button class="nav-tab" data-screen="novedades" id="nav-novedades" aria-label="Noticias">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <path d="M2 15h10"></path>
+        <path d="M2 18h10"></path>
+      </svg>
+      <span class="nav-tab-label">Noticias</span>
     </button>
     <button class="nav-tab" data-screen="servicios" id="nav-servicios" aria-label="Servicios" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
