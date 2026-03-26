@@ -47,7 +47,7 @@ window.addEventListener('load', async () => {
       .single();
 
     let displayName = profile?.full_name;
-    if (!displayName || displayName.trim() === '') {
+    if (!displayName || displayName.trim() === '' || displayName.includes('@')) {
       displayName = '';
     }
     
@@ -55,8 +55,8 @@ window.addEventListener('load', async () => {
     
     // Hardcode name and try to fix role if needed
     if (user.email === 'ambler.eduardo@gmail.com') {
-      if (displayName === '') displayName = 'Eduardo Javier Ambler Rios';
-      if (profile?.role !== 'admin') {
+      displayName = 'Eduardo Javier Ambler Rios';
+      if (profile?.role !== 'admin' || profile?.full_name !== 'Eduardo Javier Ambler Rios') {
         _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', user.id).then();
       }
     }
@@ -244,7 +244,7 @@ async function handleLogin(event) {
     .single();
 
   let displayName = profile?.full_name;
-  if (!displayName || displayName.trim() === '') {
+  if (!displayName || displayName.trim() === '' || displayName.includes('@')) {
     displayName = '';
   }
 
@@ -252,8 +252,8 @@ async function handleLogin(event) {
   
   // Hardcode name and try to fix role if needed
   if (email === 'ambler.eduardo@gmail.com') {
-    if (displayName === '') displayName = 'Eduardo Javier Ambler Rios';
-    if (profile?.role !== 'admin') {
+    displayName = 'Eduardo Javier Ambler Rios';
+    if (profile?.role !== 'admin' || profile?.full_name !== 'Eduardo Javier Ambler Rios') {
       _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', data.user.id).then();
     }
   }
@@ -341,7 +341,7 @@ async function loadProfileData() {
     nameInput.value = profile.full_name || '';
     phoneInput.value = profile.phone || '';
 
-    if (nameDisplay) nameDisplay.textContent = profile.full_name || 'Sin Nombre';
+    if (nameDisplay) nameDisplay.textContent = profile.full_name || ' ';
     // Display role from DB
     const roleLabels = { admin: 'PROFESOR', alumno: 'ALUMNO' };
     if (roleDisplay) roleDisplay.textContent = roleLabels[profile.role] || profile.role || 'Alumno';
@@ -794,7 +794,7 @@ function renderAdminPaymentsList(students) {
   container.innerHTML = students.map(s => `
     <div class="student-admin-card" style="border-left: 4px solid #34D399;">
       <div class="stu-info">
-        <strong>${s.full_name || 'Sin nombre'}</strong>
+        <strong>${s.full_name || ' '}</strong>
         <span>Plan Mensual: ${formats.format(35000)}</span>
       </div>
       <div class="stu-actions">
