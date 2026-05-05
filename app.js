@@ -1854,3 +1854,181 @@ async function renderDiscountsList() {
     </div>
   `).join('');
 }
+
+// ==========================================
+// MÓDULO SÚPER ADMINISTRADOR - MÉTRICAS Y GRADUACIONES (FASE 4 PENDIENTES)
+// ==========================================
+
+async function updateAdminMetrics() {
+  try {
+    // 1. Contar estudiantes activos
+    const { count: studentCount, error: countErr } = await _supabase
+      .from('cohab_profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'activo');
+
+    // 2. Sumar recaudación del mes actual
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0,0,0,0);
+
+    const { data: payments, error: payErr } = await _supabase
+      .from('cohab_payments')
+      .select('amount')
+      .eq('status', 'approved')
+      .gte('payment_date', startOfMonth.toISOString());
+
+    let totalRevenue = 0;
+    if (payments) {
+      totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    }
+
+    const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+    const revEl = document.getElementById('admin-revenue');
+    const actEl = document.getElementById('admin-active-count');
+
+    if (revEl) revEl.textContent = formats.format(totalRevenue);
+    if (actEl) actEl.textContent = studentCount !== null ? studentCount : '0';
+
+  } catch (error) {
+    console.error('Error updating admin metrics:', error);
+  }
+}
+
+async function fetchAllStudents() {
+  try {
+    const studentList = document.getElementById('admin-student-list');
+    const paymentsList = document.getElementById('admin-payments-list');
+
+    // --- 1. Cargar alumnos para graduaciones ---
+    if (studentList) {
+      studentList.innerHTML = '<div class="loading-spinner">Cargando alumnos...</div>';
+      const { data: students, error: studentError } = await _supabase
+        .from('cohab_profiles')
+        .select('*')
+        .order('name');
+
+      if (studentError) throw studentError;
+
+      if (!students || students.length === 0) {
+        studentList.innerHTML = '<p class="empty-state">No hay alumnos registrados.</p>';
+      } else {
+        const beltLabels = {
+          'white': '⚪ Blanco',
+          'blue': '🔵 Azul',
+          'purple': '🟣 Morado',
+          'brown': '🟤 Marrón',
+          'black': '⚫ Negro',
+          'No Belt': '🥋 Sin Cinturón'
+        };
+
+        studentList.innerHTML = students.map(st => {
+          const selectOptions = Object.entries(beltLabels).map(([key, label]) => {
+            return `<option value="${key}" ${st.belt === key ? 'selected' : ''}>${label}</option>`;
+          }).join('');
+
+          return `
+            <div class="service-card-full" style="padding: 15px; margin-bottom: 10px; border-left: 3px solid var(--aurora); width: 100%; box-sizing: border-box; display: block; background: var(--bg-glass);">
+              <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:10px; flex-wrap:wrap;">
+                <div>
+                  <h4 style="color:var(--text-white); margin:0 0 5px 0; font-size:1.05rem;">${st.name || 'Sin Nombre'}</h4>
+                  <span style="font-size:0.8rem; color:var(--text-muted);">${st.email || 'Sin correo'}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <select onchange="updateStudentBelt('${st.id}', this.value)" style="background:var(--bg-deep); color:var(--text-white); border:1px solid rgba(255,255,255,0.1); padding:6px 12px; border-radius:6px; font-size:0.85rem; cursor:pointer;">
+                    ${selectOptions}
+                  </select>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // --- 2. Cargar pagos para control mensual ---
+    if (paymentsList) {
+      paymentsList.innerHTML = '<div class="loading-spinner">Cargando pagos...</div>';
+      const { data: payments, error: payError } = await _supabase
+        .from('cohab_payments')
+        .select('*, cohab_profiles(name)')
+        .order('payment_date', { ascending: false });
+
+      if (payError) throw payError;
+
+      if (!payments || payments.length === 0) {
+        paymentsList.innerHTML = '<p class="empty-state">No hay registros de pagos.</p>';
+      } else {
+        const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+        paymentsList.innerHTML = payments.map(p => {
+          const payerName = p.cohab_profiles?.name || 'Usuario Desconocido';
+          const isApproved = p.status === 'approved';
+          const statusBadge = isApproved 
+            ? '<span style="background:rgba(52, 211, 153, 0.15); color:#34D399; padding:4px 8px; border-radius:4px; font-size:0.75rem; font-weight:bold;">Aprobado</span>'
+            : '<span style="background:rgba(245, 158, 11, 0.15); color:#F59E0B; padding:4px 8px; border-radius:4px; font-size:0.75rem; font-weight:bold;">Pendiente</span>';
+
+          const approveBtn = !isApproved
+            ? `<button class="auth-btn" onclick="approvePaymentDirect('${p.id}')" style="background:var(--aurora); color:#000; padding:4px 8px; font-size:0.75rem; min-width:auto; height:auto; border-radius:4px; border:none; cursor:pointer;">Aprobar</button>`
+            : '';
+
+          const paymentDate = p.payment_date ? new Date(p.payment_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit' }) : 'Sin fecha';
+
+          return `
+            <div class="service-card-full" style="padding: 15px; margin-bottom: 10px; border-left: 3px solid ${isApproved ? '#34D399' : '#F59E0B'}; width: 100%; box-sizing: border-box; display: block; background: var(--bg-glass);">
+              <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:10px; flex-wrap:wrap;">
+                <div>
+                  <h4 style="color:var(--text-white); margin:0 0 5px 0; font-size:1.05rem;">${payerName}</h4>
+                  <span style="font-size:0.8rem; color:var(--text-muted);">${paymentDate} • <b>${formats.format(p.amount)}</b></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  ${statusBadge}
+                  ${approveBtn}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+  } catch (error) {
+    console.error('Error fetching admin student data:', error);
+  }
+}
+
+async function updateStudentBelt(studentId, newBelt) {
+  try {
+    showToast("Actualizando cinturón...");
+    const { error } = await _supabase
+      .from('cohab_profiles')
+      .update({ belt: newBelt })
+      .eq('id', studentId);
+
+    if (error) throw error;
+    showToast("🥋 Graduación actualizada con éxito");
+    fetchAllStudents();
+  } catch (error) {
+    console.error("Error updating belt:", error);
+    showToast("❌ Error al graduar alumno");
+  }
+}
+
+async function approvePaymentDirect(paymentId) {
+  try {
+    showToast("Aprobando pago...");
+    const { error } = await _supabase
+      .from('cohab_payments')
+      .update({ status: 'approved' })
+      .eq('id', paymentId);
+
+    if (error) throw error;
+    showToast("💰 Pago aprobado con éxito");
+    updateAdminMetrics();
+    fetchAllStudents();
+  } catch (error) {
+    console.error("Error approving payment:", error);
+    showToast("❌ Error al aprobar pago");
+  }
+}
