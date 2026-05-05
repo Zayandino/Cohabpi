@@ -12,6 +12,19 @@ let currentMemberId = 'me';
 let dashboardMemberId = 'me';
 let enrollmentCart = {};
 
+// --- Utilities ---
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+
 // --- SDK Initializations (keys loaded from config.js) ---
 const mp = new MercadoPago(CONFIG.MERCADOPAGO_PUBLIC_KEY);
 const _supabase = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
