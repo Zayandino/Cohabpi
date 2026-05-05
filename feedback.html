@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Estado de Pago - Cohab</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; text-align: center; background: var(--bg-root); padding: 20px; }
+    .feedback-card { background: var(--bg-glass-strong); padding: 40px 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-glass); max-width: 400px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative; z-index: 10; }
+    .icon { font-size: 4rem; margin-bottom: 20px; }
+    .status-ok .icon { text-shadow: 0 0 20px rgba(52, 211, 153, 0.5); }
+    .status-fail .icon { text-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+    .status-pending .icon { text-shadow: 0 0 20px rgba(251, 191, 36, 0.5); }
+    h1 { color: #fff; font-family: var(--font-display); margin-bottom: 10px; }
+    p { color: var(--text-muted); margin-bottom: 30px; font-size: 0.95rem; }
+    .btn { background: var(--crimson-bright); color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; text-transform: uppercase; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="bg-panorama">
+    <img src="assets/bg-vitral-new.png" alt="Cohab Background">
+    <div class="bg-panorama-gradient"></div>
+  </div>
+
+  <div class="feedback-card" id="card">
+    <div class="icon" id="icon">🔄</div>
+    <h1 id="title">Verificando...</h1>
+    <p id="desc">Por favor espera un momento.</p>
+    <a href="index.html" class="btn">Volver a la App</a>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('status');
+    const card = document.getElementById('card');
+    const icon = document.getElementById('icon');
+    const title = document.getElementById('title');
+    const desc = document.getElementById('desc');
+
+    if (status === 'success') {
+      card.classList.add('status-ok');
+      icon.textContent = '✅';
+      title.textContent = '¡Pago Exitoso!';
+      desc.textContent = 'Tu membresía ha sido renovada. Los beneficios se reflejarán en tu perfil en unos minutos.';
+    } else if (status === 'failure') {
+      card.classList.add('status-fail');
+      icon.textContent = '❌';
+      title.textContent = 'Pago Rechazado';
+      desc.textContent = 'Tu pago no pudo ser procesado o fue cancelado. Por favor, intenta nuevamente.';
+    } else if (status === 'pending') {
+      card.classList.add('status-pending');
+      icon.textContent = '⏳';
+      title.textContent = 'Pago Pendiente';
+      desc.textContent = 'Tu pago está en proceso de validación. Recibirás acceso cuando se confirme.';
+    } else {
+      icon.textContent = '❓';
+      title.textContent = 'Estado Desconocido';
+      desc.textContent = 'No pudimos verificar el estado de la transacción.';
+    }
+  </script>
+</body>
+</html>

@@ -9,13 +9,15 @@
 
 -- Tabla de Perfiles (Usuarios)
 CREATE TABLE IF NOT EXISTS cohab_profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT,
   email TEXT,
   phone TEXT,
   belt TEXT DEFAULT 'No Belt',
   status TEXT DEFAULT 'activo',
   role TEXT DEFAULT 'student',
+  parent_id UUID REFERENCES cohab_profiles(id) ON DELETE CASCADE,
+  relationship TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -124,13 +126,13 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- ----- cohab_profiles -----
 CREATE POLICY "profiles_select" ON cohab_profiles
-  FOR SELECT USING (id = auth.uid() OR cohab_is_admin());
+  FOR SELECT USING (id = auth.uid() OR parent_id = auth.uid() OR cohab_is_admin());
 
 CREATE POLICY "profiles_insert" ON cohab_profiles
-  FOR INSERT WITH CHECK (id = auth.uid());
+  FOR INSERT WITH CHECK (id = auth.uid() OR parent_id = auth.uid());
 
 CREATE POLICY "profiles_update" ON cohab_profiles
-  FOR UPDATE USING (id = auth.uid());
+  FOR UPDATE USING (id = auth.uid() OR parent_id = auth.uid() OR cohab_is_admin());
 
 -- ----- cohab_services -----
 CREATE POLICY "services_select" ON cohab_services

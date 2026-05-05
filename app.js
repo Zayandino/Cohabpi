@@ -264,6 +264,29 @@ async function handleLogin(event) {
 async function loginSuccess(name, isAdmin, userId, email) {
   currentUser = { name, isAdmin, id: userId, email };
 
+  // Fetch the full profile to check Onboarding status
+  const { data: myProfile } = await _supabase
+    .from('cohab_profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (myProfile) {
+    currentUser.status = myProfile.status;
+  }
+
+  // Visual Transitions
+  document.getElementById('screen-auth').style.display = 'none';
+  document.getElementById('app-main-content').style.display = 'block';
+
+  // Check Onboarding
+  if (!myProfile?.waiver_signed && !isAdmin) {
+    // Force onboarding
+    document.getElementById('bottom-nav').style.display = 'none';
+    navigateTo('onboarding');
+    return; // Stop here, do not load other things yet
+  }
+
   // Update UI Elements
   const userDisplay = document.getElementById('user-display-name');
   const adminBadge = document.getElementById('admin-badge');
@@ -276,17 +299,14 @@ async function loginSuccess(name, isAdmin, userId, email) {
   if (statusCard) statusCard.style.display = isAdmin ? 'none' : 'block';
   if (navServicios) navServicios.style.display = isAdmin ? 'flex' : 'none';
   if (navPagos) navPagos.style.display = isAdmin ? 'none' : 'flex';
+  
+  document.getElementById('bottom-nav').style.display = 'flex';
 
   if (isAdmin) {
     updateAdminMetrics();
     fetchAllStudents();
     renderAdminServicesList();
   }
-
-  // Visual Transitions
-  document.getElementById('screen-auth').style.display = 'none';
-  document.getElementById('app-main-content').style.display = 'block';
-  document.getElementById('bottom-nav').style.display = 'flex';
 
   // Fetch Family Data dynamically instead of relying on hardcoded array
   await fetchFamilyMembers();
@@ -297,6 +317,46 @@ async function loginSuccess(name, isAdmin, userId, email) {
   } else {
     navigateTo('dashboard');
   }
+}
+
+async function submitOnboarding() {
+  const phone = document.getElementById('onboarding-phone').value;
+  const emergency = document.getElementById('onboarding-emergency').value;
+  const waiver = document.getElementById('onboarding-waiver').checked;
+
+  if (!phone || !emergency) {
+    showToast('⚠️ Por favor completa todos tus datos');
+    return;
+  }
+  
+  if (!waiver) {
+    showToast('⚠️ Debes aceptar el acuerdo de riesgos');
+    return;
+  }
+
+  showToast('Guardando tu perfil...');
+
+  const { error } = await _supabase
+    .from('cohab_profiles')
+    .update({ 
+      phone: phone, 
+      emergency_contact: emergency,
+      waiver_signed: true 
+    })
+    .eq('id', currentUser.id);
+
+  if (error) {
+    showToast(`❌ Error: ${error.message}`);
+    return;
+  }
+
+  showToast('✅ ¡Perfil completado!');
+  celebrate();
+  
+  // Reload data and proceed to dashboard
+  await fetchFamilyMembers();
+  document.getElementById('bottom-nav').style.display = 'flex';
+  navigateTo('dashboard');
 }
 
 function fillDemo(email, pass) {
@@ -415,6 +475,7 @@ function navigateTo(screenName) {
 
     if (screenName === 'dashboard') {
       fetchAttendance();
+      renderQuickActions(dashboardMemberId);
     }
 
     if (screenName === 'novedades') {
@@ -484,18 +545,91 @@ function copyToClipboard(elementId, btn) {
  * Show a brief toast notification.
  * @param {string} message - Message to display
  */
-function showToast(message) {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
+// --- Visual Effects ---
+function celebrate() {
+  const count = 200;
+  const defaults = {
+    origin: { y: 0.7 },
+    zIndex: 1000
+  };
 
-  clearTimeout(toastTimeout);
-  toast.textContent = message;
-  toast.classList.add('show');
+  function fire(particleRatio, opts) {
+    confetti({
+      ...defaults,
+      ...opts,
+      particleCount: Math.floor(count * particleRatio)
+    });
+  }
 
-  toastTimeout = setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2500);
+  fire(0.25, { spread: 26, startVelocity: 55 });
+  fire(0.2, { spread: 60 });
+  fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+  fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+  fire(0.1, { spread: 120, startVelocity: 45 });
 }
+
+// --- Quick Actions Logic ---
+async function renderQuickActions(memberId) {
+  const container = document.getElementById('quick-actions-container');
+  if (!container) return;
+
+  container.innerHTML = '';
+  container.style.display = 'none';
+
+  const actions = [];
+
+  // 1. Check Attendance today
+  const today = new Date().toDateString();
+  const checkedToday = attendanceRecords.some(r => new Date(r.checked_at).toDateString() === today);
+  
+  if (!checkedToday && memberId === 'me') {
+    actions.push({
+      label: 'Marcar Clase',
+      icon: '🥋',
+      class: 'action-checkin',
+      fn: 'handleCheckIn()'
+    });
+  }
+
+  // 2. Check Subscription status
+  const { data: subs } = await _supabase
+    .from('cohab_subscriptions')
+    .select('end_date, status')
+    .eq('profile_id', memberId === 'me' ? currentUser.id : memberId)
+    .eq('status', 'active')
+    .order('end_date', { ascending: false })
+    .limit(1);
+
+  const isExpired = !subs || subs.length === 0 || new Date(subs[0].end_date) < new Date();
+  
+  if (isExpired) {
+    actions.push({
+      label: 'Renovar Plan',
+      icon: '💳',
+      class: 'action-pay',
+      fn: "navigateTo('pagos')"
+    });
+  } else {
+     // If active, maybe suggest a video
+     actions.push({
+       label: 'Ver Técnica',
+       icon: '🎬',
+       class: 'action-video',
+       fn: "navigateTo('videoteca')"
+     });
+  }
+
+  if (actions.length > 0) {
+    container.style.display = 'flex';
+    container.innerHTML = actions.map(a => `
+      <button class="quick-action-btn ${a.class}" onclick="${a.fn}">
+        <span class="q-icon">${a.icon}</span>
+        <span class="q-label">${a.label}</span>
+      </button>
+    `).join('');
+  }
+}
+
 
 // --- File Upload & Drag-and-Drop ---
 const dropZone = document.getElementById('drop-zone');
@@ -593,7 +727,7 @@ function handleFile(file) {
 }
 
 // --- Mercado Pago Logic ---
-async function openMercadoPago() {
+async function startCheckoutMp() {
   const selectedIds = Object.keys(enrollmentCart);
   if (selectedIds.length === 0) {
     showToast("⚠️ Primero selecciona un plan para ti o tu familia");
@@ -647,6 +781,7 @@ async function openMercadoPago() {
     }
 
     showToast("✅ Inscripción Completada Exitosamente");
+    celebrate();
 
     // Clear cart
     enrollmentCart = {};
@@ -663,7 +798,6 @@ async function fetchServices() {
 
   if (!error && data.length > 0) {
     services = data;
-    renderServiceCatalog();
     updateAdminMetrics();
     renderAdminServicesList();
   }
@@ -877,6 +1011,7 @@ function switchDashboardView(id) {
   const member = familyMembers.find(m => m.id === id);
   updateRankDisplay(member);
   updateDashboardStatus(member.id);
+  renderQuickActions(id);
 }
 
 function updateRankDisplay(member) {
@@ -929,7 +1064,7 @@ async function fetchFamilyMembers() {
   };
 
   const { data, error } = await _supabase
-    .from('cohab_family_members')
+    .from('cohab_profiles')
     .select('*')
     .eq('parent_id', currentUser.id);
 
@@ -938,8 +1073,8 @@ async function fetchFamilyMembers() {
       id: d.id,
       name: d.name,
       icon: d.relationship === 'Hija' ? '👧' : (d.relationship === 'Hijo' ? '👦' : '👤'),
-      belt: 'white',
-      graus: 0,
+      belt: d.belt || 'white',
+      graus: d.graus || 0,
       progress: 0,
       attendance: []
     }))];
@@ -1025,46 +1160,117 @@ async function updateDashboardStatus(memberId) {
   }
 }
 
-function renderMemberSelector() {
-  const container = document.getElementById('member-selector');
+// =====================================================
+// --- NUEVO FLUJO DE PAGOS: FAMILY CART ---
+// =====================================================
+
+function renderFamilyCart() {
+  const container = document.getElementById('family-cards-list');
   if (!container) return;
 
-  let html = familyMembers.map(m => `
-    <div class="member-item ${m.id === currentMemberId ? 'active' : ''}" onclick="selectMember('${m.id}')">
-      <div class="member-avatar">${m.icon}</div>
-      <div class="member-name">${m.name}</div>
-    </div>
-  `).join('');
+  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
-  html += `<button class="add-member-btn" onclick="addNewMember()">+</button>`;
-  container.innerHTML = html;
+  container.innerHTML = familyMembers.map(m => {
+    const selection = enrollmentCart[m.id];
+    const isMe = m.id === currentUser?.id;
+    const nameLabel = isMe ? 'Yo' : m.name;
+    
+    let planInfoHtml = '<div class="family-plan">Sin plan seleccionado</div>';
+    let btnHtml = `<button class="family-action-btn" onclick="openPlanSelector('${m.id}')">ELEGIR PLAN</button>`;
+
+    if (selection) {
+      planInfoHtml = `
+        <div class="family-plan" style="color:var(--crimson-bright); font-weight:600;">
+          ${selection.service.name} (${selection.months} Meses) - ${formats.format(selection.price)}
+        </div>
+      `;
+      btnHtml = `<button class="family-action-btn edit" onclick="openPlanSelector('${m.id}')">CAMBIAR</button>`;
+    }
+
+    return `
+      <div class="family-card">
+        <div class="family-card-info">
+          <div class="family-avatar">${m.icon || '👤'}</div>
+          <div>
+            <div class="family-name">${nameLabel}</div>
+            ${planInfoHtml}
+          </div>
+        </div>
+        <div>
+          ${btnHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
-function selectMember(id) {
-  currentMemberId = id;
-  renderMemberSelector();
-  renderServiceCatalog();
+function openPlanSelector(memberId) {
+  currentMemberId = memberId;
+  const modal = document.getElementById('plan-modal');
+  const title = document.getElementById('plan-modal-title');
+  const member = familyMembers.find(m => m.id === memberId);
+  const nameLabel = member.id === currentUser?.id ? 'mi plan' : `plan para ${member.name}`;
+  
+  title.textContent = `Elegir ${nameLabel}`;
+  
+  activeService = null;
+  document.getElementById('modal-duration-section').style.display = 'none';
+  document.getElementById('modal-confirm-btn').style.opacity = '0.5';
+  document.getElementById('modal-confirm-btn').style.pointerEvents = 'none';
 
-  // If this member already has a selection, highlight it
-  const selection = enrollmentCart[id];
-  if (selection) {
-    updatePlanPrices(selection.service.discountPrice);
-    document.getElementById('step-plans-section').style.display = 'block';
-  } else {
-    document.getElementById('step-plans-section').style.display = 'none';
+  renderModalServiceCatalog();
+  modal.style.display = 'flex';
+}
+
+function closePlanSelector() {
+  document.getElementById('plan-modal').style.display = 'none';
+}
+
+function addNewMember() {
+  openAddMemberModal();
+}
+
+function openAddMemberModal() {
+  const input = document.getElementById('new-member-name');
+  if (input) input.value = '';
+  document.getElementById('add-member-modal').style.display = 'flex';
+}
+
+function closeAddMemberModal() {
+  document.getElementById('add-member-modal').style.display = 'none';
+}
+
+async function confirmAddMember() {
+  const input = document.getElementById('new-member-name');
+  const name = input ? input.value.trim() : '';
+  
+  if (!name) {
+    showToast('⚠️ Ingresa un nombre válido');
+    return;
   }
-}
 
-async function addNewMember() {
-  const name = prompt("Nombre del familiar:");
-  if (!name) return;
-
+  closeAddMemberModal();
   showToast("Añadiendo familiar...");
 
+  const { data: myProfile } = await _supabase
+    .from('cohab_profiles')
+    .select('email, phone')
+    .eq('id', currentUser.id)
+    .single();
+
   const { data, error } = await _supabase
-    .from('cohab_family_members')
+    .from('cohab_profiles')
     .insert([
-      { parent_id: currentUser.id, name: name, relationship: 'Familiar' }
+      { 
+        parent_id: currentUser.id, 
+        name: name, 
+        relationship: 'Familiar',
+        email: myProfile?.email || null,
+        phone: myProfile?.phone || null,
+        role: 'alumno',
+        belt: 'white',
+        status: 'activo'
+      }
     ])
     .select();
 
@@ -1078,26 +1284,24 @@ async function addNewMember() {
     id: d.id,
     name: d.name,
     icon: '👦',
-    belt: 'white',
-    graus: 0,
+    belt: d.belt || 'white',
+    graus: d.graus || 0,
     progress: 0,
     attendance: []
   });
 
-  selectMember(d.id);
   renderFamilyDashboardSwitch();
+  if (typeof renderFamilyCart === 'function') renderFamilyCart();
   showToast(`✅ ${name} añadido a tu cuenta.`);
 }
 
-function renderServiceCatalog() {
-  const container = document.getElementById('service-catalog');
+function renderModalServiceCatalog() {
+  const container = document.getElementById('modal-service-catalog');
   if (!container) return;
-
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
-  const selection = enrollmentCart[currentMemberId];
 
   container.innerHTML = services.map(s => `
-    <div class="service-card-full ${selection?.service.name === s.name ? 'active' : ''}" onclick="selectServiceForMember('${s.name}')">
+    <div class="service-card-full ${activeService?.name === s.name ? 'active' : ''}" onclick="selectModalService('${s.name}')">
       <div class="service-icon-box">${s.icon || '🥊'}</div>
       <div class="service-info-box">
         <div class="service-name-text">${s.name}</div>
@@ -1107,41 +1311,73 @@ function renderServiceCatalog() {
   `).join('');
 }
 
-function selectServiceForMember(serviceName) {
-  const service = services.find(s => s.name === serviceName);
-  activeService = service;
+function selectModalService(serviceName) {
+  activeService = services.find(s => s.name === serviceName);
+  renderModalServiceCatalog();
 
-  // Highlight selection in catalog
-  renderServiceCatalog();
+  const monthlyPrice = activeService.discountPrice;
+  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
-  // Show plan selection
-  updatePlanPrices(service.discountPrice);
-  document.getElementById('step-plans-section').style.display = 'block';
-  document.getElementById('step-plans-section').scrollIntoView({ behavior: 'smooth' });
+  // Update Modal Prices
+  document.getElementById('modal-price-1m').textContent = formats.format(monthlyPrice);
+  document.getElementById('modal-old-3m').textContent = formats.format(monthlyPrice * 3);
+  document.getElementById('modal-new-3m').textContent = formats.format(monthlyPrice * 3 * 0.9);
+  document.getElementById('modal-old-6m').textContent = formats.format(monthlyPrice * 6);
+  document.getElementById('modal-new-6m').textContent = formats.format(monthlyPrice * 6 * 0.85);
+  document.getElementById('modal-old-12m').textContent = formats.format(monthlyPrice * 12);
+  document.getElementById('modal-new-12m').textContent = formats.format(monthlyPrice * 12 * 0.75);
+
+  document.getElementById('modal-duration-section').style.display = 'block';
+  // Reset confirmation button until duration is picked
+  document.getElementById('modal-confirm-btn').style.opacity = '0.5';
+  document.getElementById('modal-confirm-btn').style.pointerEvents = 'none';
 }
 
-function selectFinalPlan(months) {
-  // Save to cart for current member
-  const monthlyPrice = activeService.discountPrice;
-  let finalPrice = monthlyPrice * months;
+let pendingDuration = null;
+function selectModalDuration(months) {
+  pendingDuration = months;
+  // Visual feedback for selected plan card
+  const cards = document.querySelectorAll('#modal-duration-section .plan-card');
+  cards.forEach(c => c.style.borderColor = 'rgba(255,255,255,0.05)');
+  
+  let index = 0;
+  if(months === 3) index = 1;
+  if(months === 6) index = 2;
+  if(months === 12) index = 3;
+  
+  if (cards[index]) {
+    cards[index].style.borderColor = 'var(--crimson-bright)';
+  }
 
-  // Apply bulk discounts
-  if (months === 3) finalPrice *= 0.9;
-  if (months === 6) finalPrice *= 0.85;
-  if (months === 12) finalPrice *= 0.75;
+  // Enable confirm button
+  const btn = document.getElementById('modal-confirm-btn');
+  btn.style.opacity = '1';
+  btn.style.pointerEvents = 'auto';
+}
+
+function confirmPlanSelection() {
+  if (!activeService || !pendingDuration) return;
+
+  const monthlyPrice = activeService.discountPrice;
+  let finalPrice = monthlyPrice * pendingDuration;
+
+  if (pendingDuration === 3) finalPrice *= 0.9;
+  if (pendingDuration === 6) finalPrice *= 0.85;
+  if (pendingDuration === 12) finalPrice *= 0.75;
 
   enrollmentCart[currentMemberId] = {
     service: activeService,
-    months,
+    months: pendingDuration,
     price: finalPrice
   };
 
+  closePlanSelector();
+  renderFamilyCart();
   updateCheckoutSummary();
-  showToast(`Plan de ${months} meses para ${familyMembers.find(m => m.id === currentMemberId).name} guardado.`);
+  showToast(`✅ Plan actualizado exitosamente.`);
 }
 
 function updateCheckoutSummary() {
-  const container = document.getElementById('summary-items');
   const summaryBox = document.getElementById('checkout-summary');
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
@@ -1154,17 +1390,9 @@ function updateCheckoutSummary() {
   summaryBox.style.display = 'block';
   let totalPay = 0;
 
-  container.innerHTML = selectedIds.map(id => {
-    const item = enrollmentCart[id];
-    const member = familyMembers.find(m => m.id === id);
-    totalPay += item.price;
-    return `
-      <div class="summary-row">
-        <span><strong>${member.name}</strong>: ${item.service.name} (${item.months}m)</span>
-        <span>${formats.format(item.price)}</span>
-      </div>
-    `;
-  }).join('');
+  selectedIds.forEach(id => {
+    totalPay += enrollmentCart[id].price;
+  });
 
   document.getElementById('summary-total-price').textContent = formats.format(totalPay);
 }
@@ -1223,24 +1451,63 @@ async function fetchAttendance() {
   }
 }
 
+const TODAY_CLASSES = [
+  { id: 'bjj_am', name: 'BJJ Mediodía', time: '13:00', icon: '🥋' },
+  { id: 'bjj_pm', name: 'BJJ Noche', time: '20:00', icon: '🥋' },
+  { id: 'nogi', name: 'NoGi', time: '21:00', icon: '🤼' }
+];
+
 function renderAttendanceUI() {
   const countEl = document.getElementById('attendance-count');
   if (countEl) countEl.textContent = attendanceRecords.length;
 
   const today = new Date().toDateString();
-  const checkedToday = attendanceRecords.some(
-    r => new Date(r.checked_at).toDateString() === today
-  );
+  const listEl = document.getElementById('today-classes-list');
+  
+  if (listEl) {
+    listEl.innerHTML = TODAY_CLASSES.map(cls => {
+      // Check if user attended this specific class today
+      const attended = attendanceRecords.some(
+        r => new Date(r.checked_at).toDateString() === today && r.class_type === cls.id
+      );
 
-  const btn = document.getElementById('checkin-btn');
-  if (btn) {
-    if (checkedToday) {
-      btn.textContent = '\u2714 Ya registrado hoy';
-      btn.classList.add('disabled');
-    } else {
-      btn.textContent = '\u2705 Marcar Asistencia';
-      btn.classList.remove('disabled');
-    }
+      if (attended) {
+        return `
+          <div class="class-card attended">
+            <div class="class-info">
+              <span class="class-icon">${cls.icon}</span>
+              <div>
+                <div class="class-name">${cls.name}</div>
+                <div class="class-time">${cls.time}</div>
+              </div>
+            </div>
+            <button class="checkin-btn disabled" disabled>
+              ✔ Listo
+            </button>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="class-card">
+            <div class="class-info">
+              <span class="class-icon">${cls.icon}</span>
+              <div>
+                <div class="class-name">${cls.name}</div>
+                <div class="class-time">${cls.time}</div>
+              </div>
+            </div>
+            <button class="checkin-btn" onclick="handleCheckIn('${cls.id}', '${cls.name}')">
+              Marcar
+            </button>
+          </div>
+        `;
+      }
+    }).join('');
+  }
+
+  // Actualizar Quick Actions si aplica
+  if (typeof renderQuickActions === 'function' && typeof dashboardMemberId !== 'undefined') {
+    renderQuickActions(dashboardMemberId);
   }
 
   renderWeekCalendar();
@@ -1282,38 +1549,39 @@ function renderWeekCalendar() {
   container.innerHTML = html;
 }
 
-async function handleCheckIn() {
+async function handleCheckIn(classId = 'BJJ', className = 'Clase') {
   if (!currentUser) return;
 
   const today = new Date().toDateString();
   const alreadyChecked = attendanceRecords.some(
-    r => new Date(r.checked_at).toDateString() === today
+    r => new Date(r.checked_at).toDateString() === today && r.class_type === classId
   );
 
   if (alreadyChecked) {
-    showToast('\u26a0\ufe0f Ya registraste tu asistencia hoy');
+    showToast(`⚠️ Ya registraste tu asistencia en ${className} hoy`);
     return;
   }
 
-  showToast('Registrando asistencia...');
+  showToast(`Registrando asistencia en ${className}...`);
 
   try {
     const { data, error } = await _supabase
       .from('cohab_attendance')
-      .insert([{ profile_id: currentUser.id }])
+      .insert([{ profile_id: currentUser.id, class_type: classId }])
       .select();
 
     if (error) {
-      showToast(`\u274c Error: ${error.message}`);
+      showToast(`❌ Error: ${error.message}`);
       return;
     }
 
     attendanceRecords.unshift(data[0]);
     renderAttendanceUI();
-    showToast('\u2705 \u00a1Asistencia registrada! Sigue entrenando \ud83e\udd4b');
+    celebrate();
+    showToast(`✅ ¡Asistencia en ${className} registrada! Sigue entrenando 🥋`);
   } catch (error) {
     console.error('Check-in error:', error);
-    showToast('\u274c Error al registrar asistencia');
+    showToast('❌ Error al registrar asistencia');
   }
 }
 
@@ -1349,19 +1617,33 @@ function renderNews() {
     return;
   }
 
-  container.innerHTML = newsItems.map(n => `
-    <div class="news-item">
-      <span class="news-emoji">${n.emoji || '\ud83d\udce2'}</span>
-      <div class="news-name">${n.title}</div>
-      <div class="news-date">${n.subtitle || ''}</div>
-    </div>
-  `).join('');
+  container.innerHTML = newsItems.map(n => {
+    const isLink = n.link_url && n.link_url.trim() !== '';
+    const wrapperStart = isLink ? `<a href="${n.link_url}" target="_blank" style="text-decoration:none; color:inherit; display:block;">` : '';
+    const wrapperEnd = isLink ? '</a>' : '';
+    const linkIcon = isLink ? '<span style="margin-left:auto; font-size:0.8rem; color:var(--text-muted);">\ud83d\udd17</span>' : '';
+
+    return `
+      ${wrapperStart}
+      <div class="news-item" style="${isLink ? 'cursor:pointer;' : ''}">
+        <span class="news-emoji">${n.emoji || '\ud83d\udce2'}</span>
+        <div style="flex:1;">
+          <div class="news-name">${n.title}</div>
+          <div class="news-date">${n.subtitle || ''}</div>
+        </div>
+        ${linkIcon}
+      </div>
+      ${wrapperEnd}
+    `;
+  }).join('');
 }
 
 async function handleCreateNews() {
   const title = document.getElementById('new-news-title').value;
   const subtitle = document.getElementById('new-news-subtitle').value;
   const emoji = document.getElementById('new-news-emoji').value || '\ud83d\udce2';
+  const linkEl = document.getElementById('new-news-link');
+  const link_url = linkEl ? linkEl.value : null;
 
   if (!title) {
     showToast('\u26a0\ufe0f Ingresa un t\u00edtulo');
@@ -1373,7 +1655,7 @@ async function handleCreateNews() {
   try {
     const { data, error } = await _supabase
       .from('cohab_news')
-      .insert([{ title, subtitle, emoji }])
+      .insert([{ title, subtitle, emoji, link_url }])
       .select();
 
     if (error) {
@@ -1389,6 +1671,7 @@ async function handleCreateNews() {
     document.getElementById('new-news-title').value = '';
     document.getElementById('new-news-subtitle').value = '';
     document.getElementById('new-news-emoji').value = '';
+    if (linkEl) linkEl.value = '';
   } catch (error) {
     console.error('Create news error:', error);
     showToast('\u274c Error al crear novedad');
@@ -1456,37 +1739,77 @@ async function fetchVideos() {
   }
 }
 
+function openVideoPlayer(videoUrl) {
+  if (!videoUrl) {
+    showToast('⚠️ No hay URL de video disponible');
+    return;
+  }
+  
+  // Extract YouTube ID
+  let videoId = '';
+  const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+  const match = videoUrl.match(ytRegex);
+  
+  if (match && match[1]) {
+    videoId = match[1];
+  } else {
+    // Try to use it as a direct link if not a standard YT link
+    window.open(videoUrl, '_blank');
+    return;
+  }
+
+  const iframe = document.getElementById('youtube-iframe');
+  if (iframe) {
+    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+  }
+  
+  document.getElementById('video-player-modal').style.display = 'flex';
+}
+
+function closeVideoPlayer() {
+  document.getElementById('video-player-modal').style.display = 'none';
+  const iframe = document.getElementById('youtube-iframe');
+  if (iframe) iframe.src = '';
+}
+
 function renderVideoteca() {
   const featuredContainer = document.getElementById('featured-video-container');
   const gridContainer = document.getElementById('video-grid');
   const descEl = document.getElementById('featured-video-desc');
+  const paywallOverlay = document.getElementById('videoteca-paywall');
+
+  // Evaluar status del usuario para el Paywall
+  const isPremium = currentUser && currentUser.status === 'activo';
+  if (paywallOverlay) {
+    paywallOverlay.style.display = isPremium ? 'none' : 'flex';
+  }
 
   const featured = videoItems.find(v => v.featured) || videoItems[0];
   const others = videoItems.filter(v => v.id !== featured?.id);
 
   if (featuredContainer && featured) {
     featuredContainer.innerHTML = `
-      <div class="featured-video">
+      <div class="featured-video" ${isPremium ? `onclick="openVideoPlayer('${featured.video_url || ''}')" style="cursor:pointer;"` : ''}>
         <img src="${featured.thumbnail_url || 'assets/thumb-1.png'}" alt="${featured.title}">
         <div class="vid-overlay">
           <div class="vid-play">
             <svg viewBox="0 0 24 24"><polygon points="7,4 20,12 7,20" /></svg>
           </div>
-          <span class="vid-label">T\u00e9cnica Destacada</span>
+          <span class="vid-label">Técnica Destacada</span>
           <h2 class="vid-title">${featured.title}</h2>
-          <div class="vid-meta">${featured.instructor || 'Instructor'} \u2022 ${featured.duration || ''}</div>
+          <div class="vid-meta">${featured.instructor || 'Instructor'} • ${featured.duration || ''}</div>
         </div>
       </div>
     `;
     if (descEl) descEl.textContent = featured.description || '';
   } else if (featuredContainer) {
-    featuredContainer.innerHTML = '<div style="padding:40px 20px; text-align:center; color:var(--text-muted);">No hay videos a\u00fan</div>';
+    featuredContainer.innerHTML = '<div style="padding:40px 20px; text-align:center; color:var(--text-muted);">No hay videos aún</div>';
     if (descEl) descEl.textContent = '';
   }
 
   if (gridContainer) {
     gridContainer.innerHTML = others.map(v => `
-      <div class="thumb-card">
+      <div class="thumb-card" ${isPremium ? `onclick="openVideoPlayer('${v.video_url || ''}')" style="cursor:pointer;"` : ''}>
         <div class="img-wrap">
           <img src="${v.thumbnail_url || 'assets/thumb-1.png'}" alt="${v.title}">
           <div class="thumb-play">
@@ -1506,12 +1829,13 @@ async function handleCreateVideo() {
   const title = document.getElementById('new-video-title').value;
   const description = document.getElementById('new-video-desc').value;
   const duration = document.getElementById('new-video-duration').value;
-  const instructor = document.getElementById('new-video-instructor').value || 'Prof. Andr\u00e9s';
+  const instructor = document.getElementById('new-video-instructor').value || 'Prof. Andrés';
   const thumbnail_url = document.getElementById('new-video-thumb').value;
+  const video_url = document.getElementById('new-video-url') ? document.getElementById('new-video-url').value : null;
   const featured = document.getElementById('new-video-featured').checked;
 
   if (!title) {
-    showToast('\u26a0\ufe0f Ingresa un t\u00edtulo para el video');
+    showToast('⚠️ Ingresa un título para el video');
     return;
   }
 
@@ -1527,11 +1851,11 @@ async function handleCreateVideo() {
 
     const { data, error } = await _supabase
       .from('cohab_videos')
-      .insert([{ title, description, duration, instructor, thumbnail_url, featured }])
+      .insert([{ title, description, duration, instructor, thumbnail_url, video_url, featured }])
       .select();
 
     if (error) {
-      showToast(`\u274c Error: ${error.message}`);
+      showToast(`❌ Error: ${error.message}`);
       return;
     }
 
@@ -1541,17 +1865,18 @@ async function handleCreateVideo() {
     videoItems.unshift(data[0]);
     renderVideoteca();
     renderAdminVideosList();
-    showToast(`\u2705 Video "${title}" creado`);
+    showToast(`✅ Video "${title}" creado`);
 
     document.getElementById('new-video-title').value = '';
     document.getElementById('new-video-desc').value = '';
     document.getElementById('new-video-duration').value = '';
     document.getElementById('new-video-instructor').value = '';
     document.getElementById('new-video-thumb').value = '';
+    if (document.getElementById('new-video-url')) document.getElementById('new-video-url').value = '';
     document.getElementById('new-video-featured').checked = false;
   } catch (error) {
     console.error('Create video error:', error);
-    showToast('\u274c Error al crear video');
+    showToast('❌ Error al crear video');
   }
 }
 
@@ -1663,3 +1988,74 @@ async function startCheckoutMp() {
     }
   }
 }
+
+// =====================================================
+// --- SANDBOX / TESTING FLOW MODULE ---
+// =====================================================
+
+async function resetTestData() {
+  if (!confirm("Esto eliminará tu asistencia y suscripciones de prueba para reiniciar el flujo. ¿Continuar?")) return;
+  
+  showToast("Reiniciando datos de prueba...");
+  
+  try {
+    // 1. Delete Attendance
+    await _supabase.from('cohab_attendance').delete().eq('profile_id', currentUser.id);
+    
+    // 2. Delete Subscriptions
+    await _supabase.from('cohab_subscriptions').delete().eq('profile_id', currentUser.id);
+    
+    // 3. Delete Family members and their data
+    const { data: family } = await _supabase.from('cohab_family_members').select('id').eq('parent_id', currentUser.id);
+    if (family && family.length > 0) {
+      const ids = family.map(f => f.id);
+      await _supabase.from('cohab_subscriptions').delete().in('family_member_id', ids);
+      await _supabase.from('cohab_family_members').delete().eq('parent_id', currentUser.id);
+    }
+
+    showToast("✅ Datos reseteados. Iniciando flujo...");
+    setTimeout(() => window.location.reload(), 1500);
+  } catch (err) {
+    console.error("Reset error:", err);
+    showToast("❌ Error al resetear datos");
+  }
+}
+
+async function simulateMembershipExpiry() {
+  showToast("Simulando vencimiento...");
+  
+  try {
+    const { error } = await _supabase
+      .from('cohab_subscriptions')
+      .update({ end_date: new Date(Date.now() - 86400000).toISOString().split('T')[0] }) // Yesterday
+      .eq('profile_id', currentUser.id)
+      .eq('status', 'active');
+
+    if (error) throw error;
+    
+    showToast("⌛ Membresía vencida simulada");
+    setTimeout(() => navigateTo('dashboard'), 1000);
+  } catch (err) {
+    console.error("Expiry simulation error:", err);
+    showToast("❌ Error al simular vencimiento");
+  }
+}
+
+let tourStep = 0;
+function startGuidedTour() {
+  tourStep = 1;
+  const guideBox = document.getElementById('tour-guide-box');
+  const stepText = document.getElementById('tour-step-text');
+  
+  if (guideBox && stepText) {
+    guideBox.style.display = 'block';
+    stepText.innerHTML = "🏁 <b>Tour Iniciado:</b> Ve al Dashboard para ver tu estado actual.";
+    navigateTo('dashboard');
+    
+    // Watch for state changes to progress the tour
+    setTimeout(() => {
+       stepText.innerHTML = "💡 <b>Paso 2:</b> Si tu membresía está vencida, aparecerá el botón 'Renovar Plan' en Acciones Rápidas. ¡Haz clic en él!";
+    }, 4000);
+  }
+}
+

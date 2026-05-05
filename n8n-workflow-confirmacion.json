@@ -1,0 +1,209 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cohab-mp-confirmacion",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook MP",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.mercadopago.com/v1/payments/{{ $json.body.data.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "name": "Verificar Pago MP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Pago Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        710,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const extRef = $input.first().json.external_reference || '';\nconst parts = extRef.split('_');\nconst profileId = parts[0] || '';\nconst serviceId = parts[1] || '';\nconst months = parseInt(parts[2] || '1', 10);\nconst amount = $input.first().json.transaction_amount;\nconst now = new Date();\nconst endDate = new Date(now);\nendDate.setMonth(endDate.getMonth() + months);\nreturn [{\n  json: {\n    profile_id: profileId,\n    service_id: serviceId,\n    months: months,\n    amount: amount,\n    start_date: now.toISOString().split('T')[0],\n    end_date: endDate.toISOString().split('T')[0]\n  }\n}];"
+      },
+      "name": "Extraer Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cohablosandes.cloud/rest/v1/cohab_payments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"profile_id\": \"{{ $json.profile_id }}\",\n  \"amount\": {{ $json.amount }},\n  \"status\": \"approved\",\n  \"payment_method\": \"mercadopago\"\n}",
+        "options": {}
+      },
+      "name": "Supabase: Registrar Pago",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1170,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cohablosandes.cloud/rest/v1/cohab_subscriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"profile_id\": \"{{ $json.profile_id }}\",\n  \"service_id\": \"{{ $json.service_id }}\",\n  \"status\": \"active\",\n  \"start_date\": \"{{ $json.start_date }}\",\n  \"end_date\": \"{{ $json.end_date }}\"\n}",
+        "options": {}
+      },
+      "name": "Supabase: Activar Suscripcion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook MP": {
+      "main": [
+        [
+          {
+            "node": "Verificar Pago MP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Pago MP": {
+      "main": [
+        [
+          {
+            "node": "Pago Aprobado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pago Aprobado?": {
+      "main": [
+        [
+          {
+            "node": "Extraer Datos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Extraer Datos": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Registrar Pago",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Registrar Pago": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Activar Suscripcion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

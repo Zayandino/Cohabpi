@@ -14,6 +14,7 @@
   <!-- SDKs -->
   <script src="https://sdk.mercadopago.com/js/v2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 
 <body>
@@ -89,6 +90,11 @@
                 class="admin-badge" style="display:none">ADMIN</span></div>
           </div>
 
+          <!-- Smart Quick Actions -->
+          <div id="quick-actions-container" class="quick-actions-row" style="display:none">
+            <!-- Rendered by JS -->
+          </div>
+
           <!-- Family Quick Switcher -->
           <div id="family-dashboard-switch" class="family-quick-switch" style="display:none">
             <!-- Rendered by JS -->
@@ -150,9 +156,13 @@
                   <span id="attendance-count">0</span> <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">clases</span>
                 </h3>
               </div>
-              <button class="checkin-btn" id="checkin-btn" onclick="handleCheckIn()">
-                ✅ Marcar Asistencia
-              </button>
+            </div>
+            
+            <div class="today-classes-section">
+              <span class="metric-label" style="display:block; margin-bottom:8px;">Clases de Hoy</span>
+              <div id="today-classes-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom: 16px;">
+                <!-- Rendered by JS -->
+              </div>
             </div>
             <div class="week-calendar" id="week-calendar">
               <!-- Rendered by JS -->
@@ -192,98 +202,100 @@
             <img src="assets/logo-original.jpg" alt="Cohab Logo">
           </div>
 
-          <!-- Enrollment Wizard (New intuitive flow) -->
-          <div id="enrollment-wizard">
-
-            <!-- STEP 1: WHO -->
-            <div class="step-container">
-              <div class="step-header">
-                <div class="step-num">1</div>
-                <h2 class="step-title">¿Quién va a entrenar?</h2>
-              </div>
-
-              <div class="member-list" id="member-selector">
-                <!-- Will be rendered by JS: Yo, Hijo 1, etc. -->
-                <div class="member-item active" onclick="selectMember('me')">
-                  <div class="member-avatar">🥋</div>
-                  <div class="member-name">Yo</div>
-                </div>
-                <button class="add-member-btn" onclick="addNewMember()">+</button>
-              </div>
+          <!-- Nueva Experiencia: Family Cart -->
+          <div id="family-cart-container" class="admin-form-glass" style="margin-bottom: 24px; padding: 20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+              <h3 style="font-family:var(--font-display); font-size:1.2rem; color: var(--text-white);">Familia Cohab</h3>
+              <button class="icon-btn" onclick="addNewMember()" style="background:var(--bg-elevated); border:1px solid var(--border-glass); border-radius:50%; width:36px; height:36px;">+</button>
+            </div>
+            
+            <div id="family-cards-list" style="display:flex; flex-direction:column; gap:12px;">
+              <!-- Rendered by JS -->
+              <div class="loading-spinner">Cargando familia...</div>
             </div>
 
-            <!-- STEP 2: WHAT -->
-            <div class="step-container" id="step-service-section">
-              <div class="step-header">
-                <div class="step-num">2</div>
-                <h2 class="step-title">Selecciona Disciplina</h2>
-              </div>
-              <div class="service-grid" id="service-catalog">
-                <!-- Rendered by JS: BJJ Adults, BJJ Kids, etc. -->
-              </div>
-            </div>
-
-            <!-- STEP 3: HOW LONG -->
-            <div class="step-container" id="step-plans-section" style="display:none">
-              <div class="step-header">
-                <div class="step-num">3</div>
-                <h2 class="step-title">Selecciona Duración</h2>
-              </div>
-
-              <div class="plans-grid">
-                <!-- 1 Mes -->
-                <div class="plan-card" onclick="selectFinalPlan(1)">
-                  <div class="plan-duration">1 Mes</div>
-                  <div class="plan-price-row">
-                    <span class="plan-price-new" id="price-1m">$0</span>
-                  </div>
-                </div>
-
-                <!-- 3 Meses -->
-                <div class="plan-card featured" onclick="selectFinalPlan(3)">
-                  <div class="plan-discount-tag">10% OFF</div>
-                  <div class="plan-duration">3 Meses</div>
-                  <div class="plan-price-row">
-                    <span class="plan-price-old" id="old-3m">$0</span>
-                    <span class="plan-price-new" id="new-3m">$0</span>
-                  </div>
-                </div>
-
-                <!-- 6 Meses -->
-                <div class="plan-card" onclick="selectFinalPlan(6)">
-                  <div class="plan-discount-tag">15% OFF</div>
-                  <div class="plan-duration">6 Meses</div>
-                  <div class="plan-price-row">
-                    <span class="plan-price-old" id="old-6m">$0</span>
-                    <span class="plan-price-new" id="new-6m">$0</span>
-                  </div>
-                </div>
-
-                <!-- 12 Meses -->
-                <div class="plan-card" onclick="selectFinalPlan(12)">
-                  <div class="plan-discount-tag">25% OFF</div>
-                  <div class="plan-duration">12 Meses</div>
-                  <div class="plan-price-row">
-                    <span class="plan-price-old" id="old-12m">$0</span>
-                    <span class="plan-price-new" id="new-12m">$0</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Checkout Summary -->
-            <div id="checkout-summary" class="checkout-box" style="display:none">
-              <h3 class="checkout-title">Resumen de Inscripción</h3>
-              <div id="summary-items">
-                <!-- JS Injected rows -->
-              </div>
-              <div class="summary-total">
+            <!-- Checkout Summary (Total) -->
+            <div id="checkout-summary" class="checkout-box" style="display:none; margin-top: 20px;">
+              <div class="summary-total" style="border-top:none; margin-top:0; padding-top:0;">
                 <span>Total a Pagar</span>
                 <span id="summary-total-price">$0</span>
               </div>
             </div>
+          </div>
 
-          </div> <!-- End enrollment-wizard -->
+          <!-- Modal Selector de Planes (Glassmorphism) -->
+          <div id="plan-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-glass">
+              <div class="modal-header">
+                <h3 id="plan-modal-title">Elegir Plan</h3>
+                <button class="close-modal" onclick="closePlanSelector()">×</button>
+              </div>
+              <div class="modal-body">
+                <div class="step-title" style="font-size:1rem; margin-bottom:12px;">1. Disciplina</div>
+                <div class="service-grid" id="modal-service-catalog" style="margin-bottom:24px;">
+                  <!-- Rendered by JS -->
+                </div>
+
+                <div id="modal-duration-section" style="display:none;">
+                  <div class="step-title" style="font-size:1rem; margin-bottom:12px;">2. Duración</div>
+                  <div class="plans-grid">
+                    <div class="plan-card" onclick="selectModalDuration(1)">
+                      <div class="plan-duration">1 Mes</div>
+                      <div class="plan-price-row"><span class="plan-price-new" id="modal-price-1m">$0</span></div>
+                    </div>
+                    <div class="plan-card featured" onclick="selectModalDuration(3)">
+                      <div class="plan-discount-tag">10% OFF</div>
+                      <div class="plan-duration">3 Meses</div>
+                      <div class="plan-price-row">
+                        <span class="plan-price-old" id="modal-old-3m">$0</span>
+                        <span class="plan-price-new" id="modal-new-3m">$0</span>
+                      </div>
+                    </div>
+                    <div class="plan-card" onclick="selectModalDuration(6)">
+                      <div class="plan-discount-tag">15% OFF</div>
+                      <div class="plan-duration">6 Meses</div>
+                      <div class="plan-price-row">
+                        <span class="plan-price-old" id="modal-old-6m">$0</span>
+                        <span class="plan-price-new" id="modal-new-6m">$0</span>
+                      </div>
+                    </div>
+                    <div class="plan-card" onclick="selectModalDuration(12)">
+                      <div class="plan-discount-tag">25% OFF</div>
+                      <div class="plan-duration">12 Meses</div>
+                      <div class="plan-price-row">
+                        <span class="plan-price-old" id="modal-old-12m">$0</span>
+                        <span class="plan-price-new" id="modal-new-12m">$0</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer" style="margin-top:20px; text-align:center;">
+                <button id="modal-confirm-btn" class="auth-btn" style="opacity:0.5; pointer-events:none;" onclick="confirmPlanSelection()">CONFIRMAR SELECCIÓN</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal Añadir Familiar (Glassmorphism) -->
+          <div id="add-member-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-glass" style="max-width: 400px;">
+              <div class="modal-header">
+                <h3 style="font-family:var(--font-display); font-size:1.3rem; color:var(--text-white);">Añadir Familiar</h3>
+                <button class="close-modal" onclick="closeAddMemberModal()">×</button>
+              </div>
+              <div class="modal-body">
+                <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:16px;">
+                  Ingresa el nombre de tu familiar para poder asignarle un plan de entrenamiento.
+                </p>
+                <div class="auth-input-group">
+                  <input type="text" id="new-member-name" class="auth-input" placeholder="Nombre completo" autocomplete="off">
+                </div>
+              </div>
+              <div class="modal-footer" style="margin-top:20px;">
+                <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson-deep), var(--crimson));" onclick="confirmAddMember()">GUARDAR FAMILIAR</button>
+              </div>
+            </div>
+          </div>
 
           <!-- Mercado Pago Primary CTA -->
           <div class="mp-card">
@@ -384,8 +396,8 @@
                 </div>
               </div>
               <div class="admin-input-group" style="margin-bottom: 16px;">
-                <label>Subtítulo / Fecha</label>
-                <input type="text" id="new-news-subtitle" class="admin-input" placeholder="ej: 15 de Abril">
+                <label>Enlace / URL (Opcional)</label>
+                <input type="text" id="new-news-link" class="admin-input" placeholder="ej: https://www.cohab.com/torneo">
               </div>
               <button class="auth-btn" style="background: linear-gradient(135deg, var(--aurora), #5B4FCF); color: white;"
                 onclick="handleCreateNews()">
@@ -425,6 +437,10 @@
                 <label>URL Thumbnail</label>
                 <input type="text" id="new-video-thumb" class="admin-input" placeholder="assets/thumb-X.png o URL">
               </div>
+              <div class="admin-input-group" style="margin-bottom: 12px;">
+                <label>URL del Video (YouTube)</label>
+                <input type="text" id="new-video-url" class="admin-input" placeholder="https://www.youtube.com/watch?v=...">
+              </div>
               <div style="display:flex; align-items:center; gap:10px; margin-bottom: 16px;">
                 <input type="checkbox" id="new-video-featured" style="width:18px; height:18px;">
                 <label for="new-video-featured" style="font-size:0.85rem; color:var(--text-muted);">Marcar como Video Destacado</label>
@@ -453,6 +469,17 @@
           <div class="top-bar-title">Academia Virtual</div>
         </div>
 
+        <div class="content" style="position: relative; padding-top: 10px;">
+          <!-- Paywall Overlay -->
+          <div id="videoteca-paywall" class="paywall-overlay" style="display:none;">
+            <div class="paywall-content">
+              <div style="font-size:3rem; margin-bottom:10px;">🔒</div>
+              <h3 style="color:var(--text-white); font-size:1.2rem; margin-bottom:8px;">Contenido Premium</h3>
+              <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:20px;">Tu membresía no está activa. Renueva tu plan para acceder a todas las técnicas.</p>
+              <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); color:white;" onclick="navigateTo('pagos')">Renovar Plan</button>
+            </div>
+          </div>
+
         <!-- Featured Video (dynamic) -->
         <div id="featured-video-container">
           <!-- Rendered by JS -->
@@ -469,6 +496,53 @@
         <!-- Video Grid (dynamic) -->
         <div class="thumb-grid" id="video-grid">
           <!-- Rendered by JS -->
+        </div>
+
+        <!-- YouTube Video Player Modal -->
+        <div id="video-player-modal" class="modal-overlay" style="display:none; z-index: 3000;">
+          <div class="modal-glass" style="max-width: 800px; padding: 0; overflow: hidden; background: #000;">
+            <div class="modal-header" style="position: absolute; top: 10px; right: 10px; z-index: 10;">
+              <button class="close-modal" onclick="closeVideoPlayer()" style="color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.8); font-size: 2.5rem;">×</button>
+            </div>
+            <div class="video-container" style="position: relative; padding-bottom: 56.25%; height: 0; width: 100%;">
+              <iframe id="youtube-iframe" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <!-- ===== SCREEN: ONBOARDING ===== -->
+      <section id="screen-onboarding" class="screen">
+        <div class="content" style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:90vh; text-align:center; padding: 20px;">
+          <img src="assets/logo-original.jpg" alt="Cohab Logo" style="width: 100px; border-radius: 50%; border: 2px solid var(--border-glass); margin-bottom: 24px;">
+          <h2 style="font-family:var(--font-display); font-size:1.8rem; color:var(--text-white); margin-bottom:12px;">¡Bienvenido a Cohab!</h2>
+          <p style="color:var(--text-muted); font-size:1rem; margin-bottom:32px;">Antes de empezar, necesitamos completar tu perfil de seguridad.</p>
+
+          <div class="admin-form-glass" style="width:100%; max-width:400px; text-align:left; margin-bottom:20px;">
+            <div class="admin-input-group" style="margin-bottom: 16px;">
+              <label>Tu Teléfono</label>
+              <input type="tel" id="onboarding-phone" class="auth-input" placeholder="+56 9...">
+            </div>
+            <div class="admin-input-group" style="margin-bottom: 16px;">
+              <label>Contacto de Emergencia</label>
+              <input type="text" id="onboarding-emergency" class="auth-input" placeholder="Nombre y teléfono">
+            </div>
+          </div>
+
+          <div class="admin-form-glass" style="width:100%; max-width:400px; text-align:left; margin-bottom:24px;">
+            <h3 style="font-family:var(--font-display); font-size:1.1rem; color:var(--crimson-bright); margin-bottom:12px;">Acuerdo de Riesgos (Waiver)</h3>
+            <div style="background:rgba(0,0,0,0.3); border-radius:var(--radius-md); padding:12px; height:120px; overflow-y:auto; font-size:0.8rem; color:var(--text-light); margin-bottom:16px;">
+              <p>Reconozco que la práctica de Jiu-Jitsu Brasileño involucra contacto físico y conlleva riesgos inherentes de lesión. Al continuar, asumo toda la responsabilidad de cualquier riesgo físico o daño que pueda surgir de mi participación en las clases, seminarios o entrenamientos dentro de las instalaciones de Cohab Los Andes.</p>
+              <p>Confirmo que me encuentro en buenas condiciones físicas para participar en estas actividades y libero a Cohab Los Andes, sus instructores y dueños de cualquier responsabilidad legal en caso de accidente o lesión.</p>
+            </div>
+            <div style="display:flex; align-items:flex-start; gap:10px;">
+              <input type="checkbox" id="onboarding-waiver" style="width:20px; height:20px; margin-top:2px;">
+              <label for="onboarding-waiver" style="font-size:0.85rem; color:var(--text-muted);">He leído y acepto los términos de liberación de responsabilidad.</label>
+            </div>
+          </div>
+
+          <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); width:100%; max-width:400px;" onclick="submitOnboarding()">Comenzar mi camino</button>
         </div>
       </section>
 
@@ -526,6 +600,12 @@
                 GUARDAR CAMBIOS
               </button>
             </div>
+
+            <div class="profile-actions-row" style="margin-top:12px;">
+              <button type="button" class="auth-btn" style="background:var(--bg-elevated); color:var(--text-muted); border:1px solid var(--border-glass);" onclick="navigateTo('sandbox')">
+                🛠️ MODO SANDBOX (PRUEBAS)
+              </button>
+            </div>
           </form>
 
           <!-- Ficha de Salud -->
@@ -552,6 +632,46 @@
                  <line x1="21" y1="12" x2="9" y2="12"></line>
                </svg>
              </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SCREEN: SANDBOX (TESTING FLOW) ===== -->
+      <section id="screen-sandbox" class="screen">
+        <div class="top-bar">
+          <button class="icon-btn" onclick="navigateTo('dashboard')" aria-label="Volver">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div class="top-bar-title">Modo Sandbox</div>
+        </div>
+
+        <div class="content">
+          <div class="status-glass warning" style="margin-top:20px;">
+            <div class="status-main">Laboratorio de Flujo</div>
+            <div class="status-sub">Usa estas herramientas para probar la experiencia completa del alumno.</div>
+          </div>
+
+          <div class="admin-form-glass">
+            <h3 style="color:var(--crimson-bright); margin-bottom:15px;">Controles de Prueba</h3>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <button class="status-cta" onclick="resetTestData()" style="background:var(--bg-elevated); border:1px solid var(--crimson-deep);">
+                🔄 Resetear Todo (Empezar de 0)
+              </button>
+              <button class="status-cta" onclick="simulateMembershipExpiry()">
+                ⌛ Simular Vencimiento
+              </button>
+              <button class="status-cta" onclick="startGuidedTour()" style="background:var(--aurora);">
+                ✨ Iniciar Tour Guiado
+              </button>
+            </div>
+          </div>
+
+          <div id="tour-guide-box" class="status-glass ok" style="display:none; margin-top:20px; border-style:dashed;">
+            <div id="tour-step-text" style="font-weight:600;">Paso 1: Ve al dashboard...</div>
           </div>
         </div>
       </section>
