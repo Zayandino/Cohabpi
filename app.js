@@ -1,4 +1,66 @@
-// --- Global State ---
+async function handleCreateService() {
+  const name = document.getElementById('new-service-name').value;
+  const schedule = document.getElementById('new-service-schedule').value;
+  const imageUrl = document.getElementById('new-service-image').value;
+  const capacity = parseInt(document.getElementById('new-service-capacity').value) || 0;
+  const type = document.getElementById('new-service-type').value;
+  const requiresAttendance = document.getElementById('new-service-attendance').checked;
+  const isExclusive = type === 'seminario';
+
+  // Recoger Tiers
+  const tierNames = document.querySelectorAll('#service-tiers-container .tier-name');
+  const tierPrices = document.querySelectorAll('#service-tiers-container .tier-price');
+  let tiers = [];
+  for(let i=0; i<tierNames.length; i++) {
+     const tName = tierNames[i].value.trim();
+     const tPrice = parseInt(tierPrices[i].value);
+     if (tName && !isNaN(tPrice)) {
+        tiers.push({ name: tName, price: tPrice });
+     }
+  }
+
+  // Fallback simple: Si no hay tiers, tomamos el primero vacío como base?
+  // O podemos requerir al menos 1 tier
+  if (!name || tiers.length === 0) {
+    showToast("⚠️ Ingresa un nombre y al menos un Plan/Precio (Tier)");
+    return;
+  }
+
+  // Usar el primer tier como precio base para compatibilidad
+  const basePrice = tiers[0].price;
+
+  showToast("Guardando disciplina...");
+
+  const { error } = await _supabase
+    .from('cohab_services')
+    .insert([{ 
+      name: name,
+      price: basePrice,
+      schedule: schedule,
+      image_url: imageUrl,
+      requires_quota: capacity > 0,
+      capacity_limit: capacity,
+      is_exclusive: isExclusive,
+      requires_attendance: requiresAttendance,
+      pricing_tiers: tiers
+    }]);
+
+  if (error) {
+    showToast(`❌ Error: ${error.message}`);
+  } else {
+    showToast(`✅ Disciplina "${name}" creada con éxito`);
+    
+    // Limpiar inputs
+    document.getElementById('new-service-name').value = '';
+    document.getElementById('new-service-schedule').value = '';
+    document.getElementById('new-service-image').value = '';
+    document.getElementById('new-service-capacity').value = '';
+    tierNames.forEach(i => i.value = '');
+    tierPrices.forEach(i => i.value = '');
+    
+    renderAdminServicesList();
+  }
+}// --- Global State ---
 let currentUser = null;
 let services = [];
 let toastTimeout = null;
@@ -310,8 +372,13 @@ async function loginSuccess(name, isAdmin, userId, email) {
   if (userDisplay) userDisplay.textContent = name;
   if (adminBadge) adminBadge.style.display = isAdmin ? 'inline-block' : 'none';
   if (statusCard) statusCard.style.display = isAdmin ? 'none' : 'block';
-  if (navServicios) navServicios.style.display = isAdmin ? 'flex' : 'none';
   if (navPagos) navPagos.style.display = isAdmin ? 'none' : 'flex';
+  
+  // Mostrar Panel Admin dentro del Perfil solo a Admins
+  const adminPanelContainer = document.getElementById('admin-panel-container');
+  if (adminPanelContainer) {
+    adminPanelContainer.style.display = isAdmin ? 'block' : 'none';
+  }
   
   document.getElementById('bottom-nav').style.display = 'flex';
 
@@ -320,16 +387,14 @@ async function loginSuccess(name, isAdmin, userId, email) {
     fetchAllStudents();
     renderAdminServicesList();
   }
+  renderDiscountsList();
+  if (isAdmin) renderAdminDiscountsList();
 
   // Fetch Family Data dynamically instead of relying on hardcoded array
   await fetchFamilyMembers();
 
   // Route: admins go to admin panel, students to dashboard
-  if (isAdmin) {
-    navigateTo('servicios');
-  } else {
-    navigateTo('dashboard');
-  }
+  navigateTo('dashboard');
 }
 
 async function submitOnboarding() {
@@ -441,61 +506,41 @@ async function handleUpdateProfile(event) {
     console.error(error);
   } else {
     showToast("Perfil actualizado con éxito ✅");
-    // Update local display
-    document.getElementById('profile-full-name-display').textContent = newName;
-    document.getElementById('user-display-name').textContent = newName;
+    const nameDisplay = document.getElementById('profile-full-name-display');
+    const navDisplay = document.getElementById('user-display-name');
+    if (nameDisplay) nameDisplay.textContent = newName;
+    if (navDisplay) navDisplay.textContent = newName;
   }
 }
 
-
-// Update Screen Navigation to handle the new services screen
+// Update Screen Navigation
 function navigateTo(screenName) {
   try {
     const screens = document.querySelectorAll('.screen');
     const navItems = document.querySelectorAll('.nav-tab');
 
-    // Hide all screens
     screens.forEach(s => s.classList.remove('active'));
 
-    // Show target screen
     const target = document.getElementById(`screen-${screenName}`);
-    if (target) {
-      target.classList.add('active');
-    }
+    if (target) target.classList.add('active');
 
-    // Update nav active state
     navItems.forEach(item => {
       item.classList.remove('active');
-      if (item.dataset.screen === screenName) {
-        item.classList.add('active');
-      }
+      if (item.dataset.screen === screenName) item.classList.add('active');
     });
-
-    // Special logic for services
-    if (screenName === 'servicios') {
-      renderAdminServicesList();
-      renderAdminNewsList();
-      renderAdminVideosList();
-    }
 
     if (screenName === 'profile') {
       loadProfileData();
+      if (typeof renderAdminServicesList === 'function') renderAdminServicesList();
+      if (typeof renderAdminNewsList === 'function') renderAdminNewsList();
+      if (typeof renderAdminVideosList === 'function') renderAdminVideosList();
+      if (typeof renderAdminDiscountsList === 'function') renderAdminDiscountsList();
     }
+    if (screenName === 'videoteca') fetchVideos();
+    if (screenName === 'dashboard') { fetchAttendance(); renderQuickActions(dashboardMemberId); }
+    if (screenName === 'novedades') fetchNews();
+    if (screenName === 'descuentos' && typeof renderDiscountsList === 'function') renderDiscountsList();
 
-    if (screenName === 'videoteca') {
-      fetchVideos();
-    }
-
-    if (screenName === 'dashboard') {
-      fetchAttendance();
-      renderQuickActions(dashboardMemberId);
-    }
-
-    if (screenName === 'novedades') {
-      fetchNews();
-    }
-
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (error) {
     console.error('Navigation error:', error);
@@ -825,394 +870,34 @@ function renderAdminServicesList() {
 
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
-  container.innerHTML = services.map(s => `
-    <div class="service-card-full">
-      <div class="service-icon-box" style="background: rgba(255, 215, 0, 0.1); color: #FFD700;">
-        ${s.icon || '🥊'}
-      </div>
-      <div class="service-info-box">
-        <div class="service-name-text">${s.name}</div>
-        <div class="service-price-text">
-          <span style="color:var(--text-muted); text-decoration:line-through; font-size:0.7rem;">${formats.format(s.base_price || s.basePrice)}</span> 
-          ${formats.format(s.discount_price || s.discountPrice)}
-        </div>
-      </div>
-      <button class="icon-btn" style="width:32px; height:32px; font-size:0.8rem;" onclick="handleDeleteService('${s.id}')">
-        🗑️
-      </button>
-    </div>
-  `).join('');
-}
-
-async function handleDeleteService(id) {
-  if (!confirm("¿Seguro que quieres eliminar este servicio?")) return;
-
-  showToast("Eliminando...");
-  const { error } = await _supabase
-    .from('cohab_services')
-    .delete()
-    .eq('id', id);
-
-  if (error) {
-    showToast(`❌ Error: ${error.message}`);
-  } else {
-    showToast("✅ Servicio eliminado");
-    services = services.filter(s => s.id != id);
-    renderAdminServicesList();
-    renderServiceCatalog();
-    updateAdminMetrics();
-  }
-}
-
-let activeService = services[0];
-
-async function updateAdminMetrics() {
-  const revenueEl = document.getElementById('admin-revenue');
-  const activeCountEl = document.getElementById('admin-active-count');
-
-  // Real fetch for stats
-  const { data: students, error } = await _supabase
-    .from('cohab_profiles')
-    .select('id')
-    .eq('role', 'alumno');
-
-  if (!error && students) {
-    if (activeCountEl) activeCountEl.textContent = students.length;
-    if (revenueEl) {
-      // Mocking revenue based on active students * average price for now
-      const revenue = students.length * 35000;
-      revenueEl.textContent = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(revenue);
-    }
-  }
-}
-
-async function handleCreateService() {
-  const name = document.getElementById('new-service-name').value;
-  const price = parseInt(document.getElementById('new-service-price').value);
-  const discount = parseInt(document.getElementById('new-service-discount').value);
-
-  if (!name || isNaN(price) || isNaN(discount)) {
-    showToast("⚠️ Completa todos los campos");
-    return;
-  }
-
-  showToast("Guardando servicio...");
-
-  const { data, error } = await _supabase
-    .from('cohab_services')
-    .insert([{ name, base_price: price, discount_price: discount, icon: '🥊' }])
-    .select();
-
-  if (error) {
-    showToast(`❌ Error: ${error.message}`);
-    return;
-  }
-
-  services.push(data[0]);
-  updateAdminMetrics();
-  renderServiceCatalog();
-  renderAdminServicesList();
-
-  showToast(`✅ Servicio "${name}" creado con éxito`);
-
-  document.getElementById('new-service-name').value = '';
-  document.getElementById('new-service-price').value = '';
-  document.getElementById('new-service-discount').value = '';
-}
-
-async function fetchAllStudents() {
-  const { data, error } = await _supabase
-    .from('cohab_profiles')
-    .select('*')
-    .eq('role', 'alumno');
-
-  if (!error && data) {
-    renderStudentList(data);
-    renderAdminPaymentsList(data);
-  }
-}
-
-function renderAdminPaymentsList(students) {
-  const container = document.getElementById('admin-payments-list');
-  if (!container) return;
-
-  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
-
-  container.innerHTML = students.map(s => `
-    <div class="student-admin-card" style="border-left: 4px solid #34D399;">
-      <div class="stu-info">
-        <strong>${s.full_name || ' '}</strong>
-        <span>Plan Mensual: ${formats.format(35000)}</span>
-      </div>
-      <div class="stu-actions">
-        <span class="status-badge ok" style="padding: 4px 8px; font-size: 0.6rem;">PAGADO</span>
-      </div>
-    </div>
-  `).join('');
-}
-
-function renderStudentList(students) {
-  const container = document.getElementById('admin-student-list');
-  if (!container) return;
-
-  if (students.length === 0) {
-    container.innerHTML = '<div style="padding:20px; color:var(--text-muted);">No hay alumnos registrados aún.</div>';
-    return;
-  }
-
-  container.innerHTML = students.map(s => `
-    <div class="student-admin-card shadow-sm">
-      <div class="stu-info">
-        <strong>${s.full_name || 'Alumno'}</strong>
-        <span>${s.belt.toUpperCase()} - ${s.graus} Graus</span>
-      </div>
-      <div class="stu-actions">
-        <button onclick="updateStudentRank('${s.id}', '${s.belt}', ${s.graus + 1})">+ Grau</button>
-        <select onchange="updateStudentRank('${s.id}', this.value, ${s.graus})">
-          <option value="white" ${s.belt === 'white' ? 'selected' : ''}>Blanco</option>
-          <option value="blue" ${s.belt === 'blue' ? 'selected' : ''}>Azul</option>
-          <option value="purple" ${s.belt === 'purple' ? 'selected' : ''}>Morado</option>
-          <option value="brown" ${s.belt === 'brown' ? 'selected' : ''}>Café</option>
-          <option value="black" ${s.belt === 'black' ? 'selected' : ''}>Negro</option>
-        </select>
-      </div>
-    </div>
-  `).join('');
-}
-
-async function updateStudentRank(userId, newBelt, newGraus) {
-  // Cap graus at 4 for colored belts normally
-  if (newGraus > 4) newGraus = 4;
-  if (newGraus < 0) newGraus = 0;
-
-  showToast("Actualizando rango...");
-
-  const { error } = await _supabase
-    .from('cohab_profiles')
-    .update({ belt: newBelt, graus: newGraus })
-    .eq('id', userId);
-
-  if (error) {
-    showToast("❌ Error al graduar");
-  } else {
-    showToast("✅ Alumno graduado correctamente");
-    fetchAllStudents();
-  }
-}
-
-
-function renderFamilyDashboardSwitch() {
-  const container = document.getElementById('family-dashboard-switch');
-  if (!container) return;
-
-  if (familyMembers.length <= 1) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'flex';
-  container.innerHTML = familyMembers.map(m => `
-    <div class="switch-pill ${m.id === dashboardMemberId ? 'active' : ''}" onclick="switchDashboardView('${m.id}')">
-      ${m.name}
-    </div>
-  `).join('');
-}
-
-function switchDashboardView(id) {
-  dashboardMemberId = id;
-  renderFamilyDashboardSwitch();
-  const member = familyMembers.find(m => m.id === id);
-  updateRankDisplay(member);
-  updateDashboardStatus(member.id);
-  renderQuickActions(id);
-}
-
-function updateRankDisplay(member) {
-  const beltName = document.getElementById('current-belt-name');
-  const beltPreview = document.getElementById('belt-preview');
-  const stripeContainer = document.getElementById('belt-stripes-container');
-  const grausText = document.getElementById('current-graus-text');
-  const progressFill = document.getElementById('rank-progress-fill');
-  const progressText = document.getElementById('progress-percent-text');
-
-  // Update Data
-  const beltMap = {
-    white: 'Cinturón Blanco',
-    blue: 'Cinturón Azul',
-    purple: 'Cinturón Morado',
-    brown: 'Cinturón Café',
-    black: 'Cinturón Negro'
-  };
-
-  beltName.textContent = beltMap[member.belt] || 'Cinturón Blanco';
-  grausText.textContent = `${member.graus} Graus`;
-  progressText.textContent = `${member.progress}%`;
-  progressFill.style.width = `${member.progress}%`;
-
-  // Update Visuals
-  beltPreview.className = `belt-visual belt-${member.belt}`;
-  stripeContainer.innerHTML = Array(member.graus).fill('<div class="grau-stripe"></div>').join('');
-}
-
-async function fetchFamilyMembers() {
-  if (!currentUser) return;
-
-  const { data: myProfile } = await _supabase
-    .from('cohab_profiles')
-    .select('belt, graus')
-    .eq('id', currentUser.id)
-    .single();
-
-  const myBelt = myProfile?.belt || 'white';
-  const myGraus = myProfile?.graus || 0;
-
-  const me = { 
-    id: 'me', 
-    name: currentUser.name.split(' ')[0], 
-    icon: '🥋', 
-    belt: myBelt, 
-    graus: myGraus, 
-    progress: 0, 
-    attendance: [] 
-  };
-
-  const { data, error } = await _supabase
-    .from('cohab_profiles')
-    .select('*')
-    .eq('parent_id', currentUser.id);
-
-  if (!error && data) {
-    familyMembers = [me, ...data.map(d => ({
-      id: d.id,
-      name: d.name,
-      icon: d.relationship === 'Hija' ? '👧' : (d.relationship === 'Hijo' ? '👦' : '👤'),
-      belt: d.belt || 'white',
-      graus: d.graus || 0,
-      progress: 0,
-      attendance: []
-    }))];
-  } else {
-    familyMembers = [me];
-  }
-
-  renderMemberSelector();
-  renderFamilyDashboardSwitch();
-
-  const dashboardMember = familyMembers.find(m => m.id === dashboardMemberId) || familyMembers[0];
-  updateRankDisplay(dashboardMember);
-  updateDashboardStatus(dashboardMember.id);
-}
-
-async function updateDashboardStatus(memberId) {
-  const card = document.getElementById('status-card-dashboard');
-  const badge = document.getElementById('status-badge-dashboard');
-  const badgeText = document.getElementById('status-badge-text');
-  const mainText = document.getElementById('status-main-text');
-  const subText = document.getElementById('status-sub-text');
-  const icon = document.getElementById('status-icon-dashboard');
-
-  if (!card) return;
-
-  // Clear previous colors
-  card.className = 'status-glass';
-  badge.className = 'status-badge';
-
-  try {
-    const { data: subs, error } = await _supabase
-      .from('cohab_subscriptions')
-      .select('end_date, status')
-      .eq('profile_id', memberId)
-      .eq('status', 'active')
-      .order('end_date', { ascending: false })
-      .limit(1);
-
-    if (error || !subs || subs.length === 0) {
-      card.classList.add('danger');
-      badge.classList.add('danger');
-      badgeText.textContent = 'INACTIVA';
-      mainText.textContent = 'Sin Membresía';
-      subText.textContent = 'Regulariza tus pagos';
-      icon.textContent = '⚠️';
-      return;
-    }
-
-    const endTime = Date.parse(subs[0].end_date + 'T00:00:00');
-    const endDate = new Date(endTime);
-    const endStr = String(endDate.getDate()).padStart(2,'0') + '/' + String(endDate.getMonth()+1).padStart(2,'0') + '/' + endDate.getFullYear();
-    
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    const diffTime = endDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) {
-      card.classList.add('danger');
-      badge.classList.add('danger');
-      badgeText.textContent = 'VENCIDA';
-      mainText.textContent = 'Membresía Vencida';
-      subText.textContent = `Venció el: ${endStr}`;
-      icon.textContent = '⛔';
-    } else if (diffDays <= 1) {
-      card.classList.add('warning');
-      badge.classList.add('warning');
-      badgeText.textContent = 'POR VENCER';
-      mainText.textContent = 'Pago Pendiente';
-      subText.textContent = `Vence ${diffDays === 0 ? 'hoy' : 'mañana'}`;
-      icon.textContent = '⏳';
-    } else {
-      card.classList.add('ok');
-      badge.classList.add('ok');
-      badgeText.textContent = 'AL DÍA';
-      mainText.textContent = 'Membresía Activa';
-      subText.textContent = `Válida hasta: ${endStr}`;
-      icon.textContent = '🛡️';
-    }
-  } catch (err) {
-    console.error('Error fetching subscription status:', err);
-  }
-}
-
-// =====================================================
-// --- NUEVO FLUJO DE PAGOS: FAMILY CART ---
-// =====================================================
-
-function renderFamilyCart() {
-  const container = document.getElementById('family-cards-list');
-  if (!container) return;
-
-  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
-
-  container.innerHTML = familyMembers.map(m => {
-    const selection = enrollmentCart[m.id];
-    const isMe = m.id === currentUser?.id;
-    const nameLabel = isMe ? 'Yo' : m.name;
-    
-    let planInfoHtml = '<div class="family-plan">Sin plan seleccionado</div>';
-    let btnHtml = `<button class="family-action-btn" onclick="openPlanSelector('${m.id}')">ELEGIR PLAN</button>`;
-
-    if (selection) {
-      planInfoHtml = `
-        <div class="family-plan" style="color:var(--crimson-bright); font-weight:600;">
-          ${selection.service.name} (${selection.months} Meses) - ${formats.format(selection.price)}
-        </div>
-      `;
-      btnHtml = `<button class="family-action-btn edit" onclick="openPlanSelector('${m.id}')">CAMBIAR</button>`;
-    }
+  container.innerHTML = services.map(s => {
+    const isExcl = s.is_exclusive ? '<span style="background:var(--aurora); color:#000; padding:2px 6px; border-radius:4px; font-size:0.7rem; font-weight:bold; margin-left:8px;">Exclusiva</span>' : '';
+    const tiersStr = (s.pricing_tiers && s.pricing_tiers.length > 0) 
+      ? s.pricing_tiers.map(t => `<li style="margin-bottom:2px;">${t.name}: ${formats.format(t.price)}</li>`).join('')
+      : `<li>Precio Base: ${formats.format(s.price || s.base_price || 0)}</li>`;
 
     return `
-      <div class="family-card">
-        <div class="family-card-info">
-          <div class="family-avatar">${m.icon || '👤'}</div>
-          <div>
-            <div class="family-name">${nameLabel}</div>
-            ${planInfoHtml}
-          </div>
+    <div class="service-card-full" style="flex-direction:column; align-items:flex-start; padding:15px; border-left: 3px solid var(--crimson-bright); width: 100%; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; margin-bottom:10px;">
+        <div class="service-name-text" style="font-size:1.1rem; line-height: 1.3;">
+          ${s.name} ${isExcl}
         </div>
-        <div>
-          ${btnHtml}
-        </div>
+        <button class="auth-btn" style="background:rgba(255,50,50,0.1); color:var(--crimson); padding:5px 10px; font-size:0.75rem; min-width:auto; height:auto; border-radius:4px;" onclick="handleDeleteService('${s.id}')">
+          Eliminar
+        </button>
       </div>
+      <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+        ⏱️ <b>Horario:</b> ${s.schedule || 'No definido'}<br>
+        👥 <b>Cupos:</b> ${s.capacity_limit > 0 ? s.capacity_limit : 'Sin límite'}<br>
+        📍 <b>Asistencia:</b> ${s.requires_attendance ? 'Obligatoria' : 'Opcional'}
+      </div>
+      <div style="background:var(--bg-glass-strong); padding:10px; border-radius:8px; width:100%; box-sizing:border-box;">
+        <strong style="font-size:0.85rem; color:var(--text-light); margin-bottom:5px; display:block;">Planes Disponibles:</strong>
+        <ul style="margin:0 0 0 15px; font-size:0.85rem; color:var(--aurora); padding-left: 5px;">
+          ${tiersStr}
+        </ul>
+      </div>
+    </div>
     `;
   }).join('');
 }
@@ -1313,22 +998,33 @@ function renderModalServiceCatalog() {
   if (!container) return;
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
-  container.innerHTML = services.map(s => `
+    const container = document.getElementById('modal-service-catalog');
+  if (!container) return;
+  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
+
+  container.innerHTML = services.map(s => {
+    const displayPrice = (s.pricing_tiers && s.pricing_tiers.length > 0)
+      ? s.pricing_tiers[0].price
+      : (s.price || s.base_price || 0);
+    const exclBadge = s.is_exclusive ? '<span style="background:var(--aurora);color:#000;font-size:0.6rem;padding:2px 4px;border-radius:4px;margin-left:5px;">EXCL</span>' : '';
+    return `
     <div class="service-card-full ${activeService?.name === s.name ? 'active' : ''}" onclick="selectModalService('${s.name}')">
-      <div class="service-icon-box">${s.icon || '🥊'}</div>
+      <div class="service-icon-box">${s.icon || '🥋'}</div>
       <div class="service-info-box">
-        <div class="service-name-text">${s.name}</div>
-        <div class="service-price-text">desde ${formats.format(s.discountPrice)} /mes</div>
+        <div class="service-name-text">${s.name} ${exclBadge}</div>
+        <div class="service-price-text">desde ${formats.format(displayPrice)} /mes</div>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function selectModalService(serviceName) {
   activeService = services.find(s => s.name === serviceName);
   renderModalServiceCatalog();
 
-  const monthlyPrice = activeService.discountPrice;
+  const monthlyPrice = (activeService.pricing_tiers && activeService.pricing_tiers.length > 0)
+    ? activeService.pricing_tiers[0].price
+    : (activeService.price || activeService.base_price || 0);
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
   // Update Modal Prices
@@ -2072,3 +1768,93 @@ function startGuidedTour() {
   }
 }
 
+
+
+// ==========================================
+// MÓDULO DE DESCUENTOS (FASE 4)
+// ==========================================
+
+async function handleCreateDiscount() {
+  const title = document.getElementById('new-discount-title').value;
+  const code = document.getElementById('new-discount-code').value;
+  const imageUrl = document.getElementById('new-discount-image').value;
+
+  if (!title || !code) {
+    showToast("⚠️ Ingresa título y código del descuento");
+    return;
+  }
+
+  showToast("Creando beneficio...");
+
+  const { error } = await _supabase
+    .from('cohab_discounts')
+    .insert([{ title, code, image_url: imageUrl }]);
+
+  if (error) {
+    showToast(`❌ Error: ${error.message}`);
+  } else {
+    showToast(`✅ Beneficio creado con éxito`);
+    document.getElementById('new-discount-title').value = '';
+    document.getElementById('new-discount-code').value = '';
+    document.getElementById('new-discount-image').value = '';
+    renderAdminDiscountsList();
+  }
+}
+
+async function renderAdminDiscountsList() {
+  const list = document.getElementById('admin-discounts-list');
+  if (!list) return;
+
+  const { data, error } = await _supabase.from('cohab_discounts').select('*').order('created_at', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    list.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay beneficios creados.</p>';
+    return;
+  }
+
+  list.innerHTML = data.map(d => `
+    <div class="service-card" style="border: 1px dashed #F59E0B; background: rgba(245, 158, 11, 0.05);">
+      ${d.image_url ? `<img src="${d.image_url}" style="width:100%; height:120px; object-fit:cover; border-radius:8px 8px 0 0;">` : ''}
+      <div style="padding: 15px;">
+        <h4 style="color:#F59E0B; margin-bottom:8px;">${d.title}</h4>
+        <div style="background:#000; border:1px solid #333; padding:8px; border-radius:4px; text-align:center; letter-spacing:2px; font-weight:bold; font-family:monospace; margin-bottom:12px;">${d.code}</div>
+        <button class="auth-btn" style="background:rgba(239, 68, 68, 0.1); color:#EF4444; border:1px solid rgba(239, 68, 68, 0.2); padding:8px; font-size:0.8rem;" onclick="deleteDiscount('${d.id}')">Eliminar</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function deleteDiscount(id) {
+  if(!confirm("¿Estás seguro de eliminar este beneficio?")) return;
+  const { error } = await _supabase.from('cohab_discounts').delete().eq('id', id);
+  if (!error) {
+    showToast("✅ Beneficio eliminado");
+    renderAdminDiscountsList();
+  }
+}
+
+async function renderDiscountsList() {
+  const list = document.getElementById('discounts-list');
+  if (!list) return;
+
+  const { data, error } = await _supabase.from('cohab_discounts').select('*').order('created_at', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    list.innerHTML = '<div class="empty-state">Aún no hay descuentos disponibles. ¡Vuelve pronto!</div>';
+    return;
+  }
+
+  list.innerHTML = data.map(d => `
+    <div class="service-card" style="position:relative; overflow:hidden; border: 1px dashed var(--aurora); background: linear-gradient(180deg, var(--bg-elevated) 0%, rgba(56, 189, 248, 0.05) 100%);">
+      ${d.image_url ? `<img src="${d.image_url}" style="width:100%; height:150px; object-fit:cover; border-radius:8px 8px 0 0; border-bottom:1px solid rgba(255,255,255,0.05);">` : ''}
+      <div style="padding: 20px;">
+        <h4 style="color:var(--text-white); font-size:1.1rem; margin-bottom:10px; font-family:var(--font-display);">${d.title}</h4>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Usa este código exclusivo al momento de pagar o mostrar en la tienda.</p>
+        <div style="background:var(--bg-deep); border:1px dashed var(--aurora); padding:12px; border-radius:8px; text-align:center; letter-spacing:3px; font-weight:800; font-family:monospace; color:var(--aurora); display:flex; align-items:center; justify-content:center; gap:10px;">
+          ${d.code}
+          <button onclick="navigator.clipboard.writeText('${d.code}'); showToast('Código copiado ✅')" style="background:none; border:none; color:var(--text-light); cursor:pointer;">📋</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
