@@ -998,10 +998,6 @@ function renderModalServiceCatalog() {
   if (!container) return;
   const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
 
-    const container = document.getElementById('modal-service-catalog');
-  if (!container) return;
-  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
-
   container.innerHTML = services.map(s => {
     const displayPrice = (s.pricing_tiers && s.pricing_tiers.length > 0)
       ? s.pricing_tiers[0].price
