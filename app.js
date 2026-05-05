@@ -117,22 +117,22 @@ window.addEventListener('load', async () => {
     const { user } = session;
     const { data: profile } = await _supabase
       .from('cohab_profiles')
-      .select('role, full_name')
+      .select('role, name, belt')
       .eq('id', user.id)
       .single();
 
-    let displayName = profile?.full_name;
+    let displayName = profile?.name;
     if (!displayName || displayName.trim() === '' || displayName.includes('@')) {
       displayName = '';
     }
     
     const isAdmin = profile?.role === 'admin' || user.email === 'ambler.eduardo@gmail.com';
     
-    // Hardcode name and try to fix role if needed
+    // Auto-fix admin role if needed
     if (user.email === 'ambler.eduardo@gmail.com') {
       displayName = 'Eduardo Javier Ambler Rios';
-      if (profile?.role !== 'admin' || profile?.full_name !== 'Eduardo Javier Ambler Rios') {
-        _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', user.id).then();
+      if (profile?.role !== 'admin') {
+        _supabase.from('cohab_profiles').update({ role: 'admin', name: 'Eduardo Javier Ambler Rios', belt: 'black' }).eq('id', user.id).then();
       }
     }
 
@@ -277,7 +277,7 @@ async function handleSignup(event) {
     const { error: profileError } = await _supabase
       .from('cohab_profiles')
       .insert([
-        { id: data.user.id, full_name: email.split('@')[0], role: 'alumno' }
+        { id: data.user.id, name: email.split('@')[0], role: 'alumno' }
       ]);
 
     if (profileError) {
@@ -314,22 +314,22 @@ async function handleLogin(event) {
   // Fetch profile to get role
   const { data: profile } = await _supabase
     .from('cohab_profiles')
-    .select('role, full_name')
+    .select('role, name, belt')
     .eq('id', data.user.id)
     .single();
 
-  let displayName = profile?.full_name;
+  let displayName = profile?.name;
   if (!displayName || displayName.trim() === '' || displayName.includes('@')) {
     displayName = '';
   }
 
   const isAdmin = profile?.role === 'admin' || email === 'ambler.eduardo@gmail.com';
   
-  // Hardcode name and try to fix role if needed
+  // Auto-fix admin role and belt if needed
   if (email === 'ambler.eduardo@gmail.com') {
     displayName = 'Eduardo Javier Ambler Rios';
-    if (profile?.role !== 'admin' || profile?.full_name !== 'Eduardo Javier Ambler Rios') {
-      _supabase.from('cohab_profiles').update({ role: 'admin', full_name: 'Eduardo Javier Ambler Rios' }).eq('id', data.user.id).then();
+    if (profile?.role !== 'admin') {
+      _supabase.from('cohab_profiles').update({ role: 'admin', name: 'Eduardo Javier Ambler Rios', belt: 'black' }).eq('id', data.user.id).then();
     }
   }
 
@@ -348,6 +348,7 @@ async function loginSuccess(name, isAdmin, userId, email) {
 
   if (myProfile) {
     currentUser.status = myProfile.status;
+    currentUser.belt = myProfile.belt || 'white';
   }
 
   // Visual Transitions
@@ -370,7 +371,15 @@ async function loginSuccess(name, isAdmin, userId, email) {
   const navPagos = document.getElementById('nav-pagos');
 
   if (userDisplay) userDisplay.textContent = name;
-  if (adminBadge) adminBadge.style.display = isAdmin ? 'inline-block' : 'none';
+
+  // Admin badge - estilo Cinturón Negro para Sensei Eduardo
+  if (adminBadge) {
+    adminBadge.style.display = isAdmin ? 'inline-block' : 'none';
+    if (isAdmin) {
+      adminBadge.textContent = '⚫ Cinturón Negro';
+      adminBadge.style.cssText = 'background:linear-gradient(135deg,#1a1a1a,#333); color:#FFD700; border:1px solid #FFD700; border-radius:12px; padding:3px 10px; font-size:0.75rem; font-weight:700; display:inline-block;';
+    }
+  }
   if (statusCard) statusCard.style.display = isAdmin ? 'none' : 'block';
   if (navPagos) navPagos.style.display = isAdmin ? 'none' : 'flex';
   
@@ -379,7 +388,15 @@ async function loginSuccess(name, isAdmin, userId, email) {
   if (adminPanelContainer) {
     adminPanelContainer.style.display = isAdmin ? 'block' : 'none';
   }
-  
+
+  // Actualizar cinturón en el widget del dashboard
+  const beltNames = { 'white':'Cinturón Blanco','blue':'Cinturón Azul','purple':'Cinturón Morado','brown':'Cinturón Marrón','black':'Cinturón Negro','No Belt':'Sin Cinturón' };
+  const userBelt = currentUser.belt || 'white';
+  const beltNameEl = document.getElementById('current-belt-name');
+  const beltPreviewEl = document.getElementById('belt-preview');
+  if (beltNameEl) beltNameEl.textContent = beltNames[userBelt] || userBelt;
+  if (beltPreviewEl) beltPreviewEl.className = 'belt-visual belt-' + userBelt;
+
   document.getElementById('bottom-nav').style.display = 'flex';
 
   if (isAdmin) {
@@ -476,10 +493,10 @@ async function loadProfileData() {
     .single();
 
   if (!error && profile) {
-    nameInput.value = profile.full_name || '';
+    nameInput.value = profile.name || '';
     phoneInput.value = profile.phone || '';
 
-    if (nameDisplay) nameDisplay.textContent = profile.full_name || ' ';
+    if (nameDisplay) nameDisplay.textContent = profile.name || ' ';
     // Display role from DB
     const roleLabels = { admin: 'PROFESOR', alumno: 'ALUMNO' };
     if (roleDisplay) roleDisplay.textContent = roleLabels[profile.role] || profile.role || 'Alumno';
@@ -496,7 +513,7 @@ async function handleUpdateProfile(event) {
   const { error } = await _supabase
     .from('cohab_profiles')
     .update({
-      full_name: newName,
+      name: newName,
       phone: newPhone
     })
     .eq('id', currentUser.id);
