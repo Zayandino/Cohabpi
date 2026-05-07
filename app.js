@@ -2114,11 +2114,26 @@ async function fetchFamilyMembers() {
   if (!currentUser) return;
 
   try {
-    const { data: myProfile, error: profileErr } = await _supabase
+    let myProfile = null;
+    const response = await _supabase
       .from('cohab_profiles')
       .select('belt, graus')
       .eq('id', currentUser.id)
       .single();
+
+    if (response.error) {
+      console.warn('Fallo al cargar belt y graus (posiblemente la columna graus no exista aún). Reintentando solo con belt...');
+      const fallbackResponse = await _supabase
+        .from('cohab_profiles')
+        .select('belt')
+        .eq('id', currentUser.id)
+        .single();
+      if (!fallbackResponse.error) {
+        myProfile = { belt: fallbackResponse.data?.belt, graus: 0 };
+      }
+    } else {
+      myProfile = response.data;
+    }
 
     const myBelt = myProfile?.belt || 'white';
     const myGraus = myProfile?.graus || 0;
