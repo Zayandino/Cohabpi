@@ -2049,3 +2049,282 @@ async function approvePaymentDirect(paymentId) {
     showToast("❌ Error al aprobar pago");
   }
 }
+
+// =====================================================
+// --- CODIGO DE SOPORTE FAMILIAR Y GESTIÓN REINTRODUCIDO ---
+// =====================================================
+
+function renderFamilyDashboardSwitch() {
+  const container = document.getElementById('family-dashboard-switch');
+  if (!container) return;
+
+  if (familyMembers.length <= 1) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'flex';
+  container.innerHTML = familyMembers.map(m => `
+    <div class="switch-pill ${m.id === dashboardMemberId ? 'active' : ''}" onclick="switchDashboardView('${m.id}')">
+      ${m.name}
+    </div>
+  `).join('');
+}
+
+function switchDashboardView(id) {
+  dashboardMemberId = id;
+  renderFamilyDashboardSwitch();
+  const member = familyMembers.find(m => m.id === id);
+  if (member) {
+    updateRankDisplay(member);
+  }
+}
+
+function updateRankDisplay(member) {
+  const beltName = document.getElementById('current-belt-name');
+  const beltPreview = document.getElementById('belt-preview');
+  const stripeContainer = document.getElementById('belt-stripes-container');
+  const grausText = document.getElementById('current-graus-text');
+  const progressFill = document.getElementById('rank-progress-fill');
+  const progressText = document.getElementById('progress-percent-text');
+
+  if (!beltName || !beltPreview) return;
+
+  const beltMap = {
+    white: 'Cinturón Blanco',
+    blue: 'Cinturón Azul',
+    purple: 'Cinturón Morado',
+    brown: 'Cinturón Café',
+    black: 'Cinturón Negro'
+  };
+
+  beltName.textContent = beltMap[member.belt] || member.belt || 'Cinturón Blanco';
+  
+  if (grausText) grausText.textContent = `${member.graus || 0} Graus`;
+  if (progressText) progressText.textContent = `${member.progress || 0}%`;
+  if (progressFill) progressFill.style.width = `${member.progress || 0}%`;
+
+  beltPreview.className = `belt-visual belt-${member.belt || 'white'}`;
+  if (stripeContainer) {
+    stripeContainer.innerHTML = Array(member.graus || 0).fill('<div class="grau-stripe"></div>').join('');
+  }
+}
+
+async function fetchFamilyMembers() {
+  if (!currentUser) return;
+
+  try {
+    const { data: myProfile, error: profileErr } = await _supabase
+      .from('cohab_profiles')
+      .select('belt, graus')
+      .eq('id', currentUser.id)
+      .single();
+
+    const myBelt = myProfile?.belt || 'white';
+    const myGraus = myProfile?.graus || 0;
+
+    const me = { 
+      id: 'me', 
+      name: currentUser.name ? currentUser.name.split(' ')[0] : 'Yo', 
+      icon: '🥋', 
+      belt: myBelt, 
+      graus: myGraus, 
+      progress: 0, 
+      attendance: [] 
+    };
+
+    const { data, error } = await _supabase
+      .from('cohab_family_members')
+      .select('*')
+      .eq('parent_id', currentUser.id);
+
+    if (!error && data) {
+      familyMembers = [me, ...data.map(d => ({
+        id: d.id,
+        name: d.name,
+        icon: d.relationship === 'Hija' ? '👧' : (d.relationship === 'Hijo' ? '👦' : '👤'),
+        belt: d.belt || 'white',
+        graus: d.graus || 0,
+        progress: 0,
+        attendance: []
+      }))];
+    } else {
+      familyMembers = [me];
+    }
+
+    renderMemberSelector();
+    renderFamilyDashboardSwitch();
+
+    const dashboardMember = familyMembers.find(m => m.id === dashboardMemberId) || familyMembers[0];
+    updateRankDisplay(dashboardMember);
+  } catch (err) {
+    console.error('Error fetching family members:', err);
+    // Fallback simple para que no se caiga la app si falla Supabase o la tabla
+    familyMembers = [{ id: 'me', name: currentUser.name ? currentUser.name.split(' ')[0] : 'Yo', icon: '🥋', belt: 'white', graus: 0, progress: 0, attendance: [] }];
+    renderMemberSelector();
+    renderFamilyDashboardSwitch();
+    updateRankDisplay(familyMembers[0]);
+  }
+}
+
+function renderMemberSelector() {
+  const container = document.getElementById('member-selector');
+  if (!container) return;
+
+  let html = familyMembers.map(m => `
+    <div class="member-item ${m.id === currentMemberId ? 'active' : ''}" onclick="selectMember('${m.id}')">
+      <div class="member-avatar">${m.icon}</div>
+      <div class="member-name">${m.name}</div>
+    </div>
+  `).join('');
+
+  html += `<button class="add-member-btn" onclick="addNewMember()">+</button>`;
+  container.innerHTML = html;
+}
+
+function selectMember(id) {
+  currentMemberId = id;
+  renderMemberSelector();
+  if (typeof renderServiceCatalog === 'function') renderServiceCatalog();
+
+  // If this member already has a selection, highlight it
+  const selection = enrollmentCart[id];
+  const plansSection = document.getElementById('step-plans-section');
+  if (selection && plansSection) {
+    if (typeof updatePlanPrices === 'function') updatePlanPrices(selection.service.discountPrice);
+    plansSection.style.display = 'block';
+  } else if (plansSection) {
+    plansSection.style.display = 'none';
+  }
+}
+
+async function addNewMember() {
+  const name = prompt("Nombre del familiar:");
+  if (!name) return;
+
+  showToast("Añadiendo familiar...");
+
+  try {
+    const { data, error } = await _supabase
+      .from('cohab_family_members')
+      .insert([
+        { parent_id: currentUser.id, name: name, relationship: 'Familiar' }
+      ])
+      .select();
+
+    if (error) {
+      showToast(`❌ Error: ${error.message}`);
+      return;
+    }
+
+    const d = data[0];
+    familyMembers.push({
+      id: d.id,
+      name: d.name,
+      icon: '👦',
+      belt: 'white',
+      graus: 0,
+      progress: 0,
+      attendance: []
+    });
+
+    selectMember(d.id);
+    renderFamilyDashboardSwitch();
+    showToast(`✅ ${name} añadido a tu cuenta.`);
+  } catch (err) {
+    console.error('Add family member error:', err);
+    showToast("❌ Error al añadir familiar");
+  }
+}
+
+async function handleDeleteService(id) {
+  if (!confirm("¿Seguro que quieres eliminar este servicio?")) return;
+
+  showToast("Eliminando...");
+  try {
+    const { error } = await _supabase
+      .from('cohab_services')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      showToast(`❌ Error: ${error.message}`);
+    } else {
+      showToast("✅ Servicio eliminado");
+      services = services.filter(s => s.id != id);
+      if (typeof renderAdminServicesList === 'function') renderAdminServicesList();
+      if (typeof renderServiceCatalog === 'function') renderServiceCatalog();
+      if (typeof updateAdminMetrics === 'function') updateAdminMetrics();
+    }
+  } catch (err) {
+    console.error('Delete service error:', err);
+    showToast("❌ Error al eliminar servicio");
+  }
+}
+
+function renderFamilyCart() {
+  const container = document.getElementById('family-cards-list');
+  if (!container) return;
+
+  const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
+
+  container.innerHTML = familyMembers.map(m => {
+    const selection = enrollmentCart[m.id];
+    const isMe = m.id === 'me';
+    const nameLabel = isMe ? 'Yo' : m.name;
+    
+    let planInfoHtml = '<div class="family-plan">Sin plan seleccionado</div>';
+    let btnHtml = `<button class="family-action-btn" onclick="openPlanSelector('${m.id}')">ELEGIR PLAN</button>`;
+
+    if (selection) {
+      planInfoHtml = `
+        <div class="family-plan" style="color:var(--crimson-bright); font-weight:600;">
+          ${selection.service.name} (${selection.months} Meses) - ${formats.format(selection.price)}
+        </div>
+      `;
+      btnHtml = `<button class="family-action-btn edit" onclick="openPlanSelector('${m.id}')">CAMBIAR</button>`;
+    }
+
+    return `
+      <div class="family-card">
+        <div class="family-card-info">
+          <div class="family-avatar">${m.icon || '👤'}</div>
+          <div>
+            <div class="family-name">${nameLabel}</div>
+            ${planInfoHtml}
+          </div>
+        </div>
+        <div>
+          ${btnHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openPlanSelector(memberId) {
+  currentMemberId = memberId;
+  const modal = document.getElementById('plan-modal');
+  const title = document.getElementById('plan-modal-title');
+  const member = familyMembers.find(m => m.id === memberId);
+  const nameLabel = member.id === 'me' ? 'mi plan' : `plan para ${member.name}`;
+  
+  if (title) title.textContent = `Elegir ${nameLabel}`;
+  
+  activeService = null;
+  const durSec = document.getElementById('modal-duration-section');
+  const confBtn = document.getElementById('modal-confirm-btn');
+  if (durSec) durSec.style.display = 'none';
+  if (confBtn) {
+    confBtn.style.opacity = '0.5';
+    confBtn.style.pointerEvents = 'none';
+  }
+
+  if (typeof renderModalServiceCatalog === 'function') renderModalServiceCatalog();
+  if (modal) modal.style.display = 'flex';
+}
+
+function closePlanSelector() {
+  const modal = document.getElementById('plan-modal');
+  if (modal) modal.style.display = 'none';
+}
