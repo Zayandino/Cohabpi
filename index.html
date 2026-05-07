@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cohab Los Andes</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=4.0.5">
 
   <!-- SDKs -->
   <script src="https://sdk.mercadopago.com/js/v2"></script>
@@ -161,7 +161,7 @@
             </div>
             
             <div class="today-classes-section">
-              <span class="metric-label" style="display:block; margin-bottom:8px;">Clases de Hoy</span>
+              <span class="metric-label" id="classes-section-title" style="display:block; margin-bottom:8px;">Clases de Hoy</span>
               <div id="today-classes-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom: 16px;">
                 <!-- Rendered by JS -->
               </div>
@@ -467,6 +467,19 @@
             </div>
           </form>
 
+          <!-- Gestión de Familia (Alumnos) -->
+          <div id="profile-family-container" class="profile-settings-form" style="margin-top: 25px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+              <h3 class="settings-title" style="margin-bottom:0;">👨‍👩‍👧‍👦 Mi Familia</h3>
+              <button type="button" class="icon-btn" onclick="addNewMember()" style="background:var(--bg-elevated); border:1px solid var(--border-glass); border-radius:50%; width:36px; height:36px; font-weight:bold; color:white; display:flex; align-items:center; justify-content:center; cursor:pointer;">+</button>
+            </div>
+            
+            <div id="profile-family-list" style="display:flex; flex-direction:column; gap:12px;">
+              <!-- Renderizado dinámicamente por JS -->
+              <div class="loading-spinner">Cargando familia...</div>
+            </div>
+          </div>
+
           <!-- Ficha de Salud -->
           <a href="https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1" target="_blank" style="text-decoration:none;">
             <div class="mp-card" style="margin-top:25px; background: linear-gradient(135deg, rgba(10, 17, 40, 0.8), rgba(6, 11, 24, 0.9)); border: 1px solid var(--border-glass); box-shadow: 0 8px 32px rgba(0,0,0,0.4); text-align: left; padding: 20px; display:flex; align-items:center; gap: 18px;">
@@ -513,192 +526,255 @@
             </div>
           </div>
 
-          <!-- Section 1: Graduaciones -->
-          <div class="admin-form-glass">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-bright);">
-              🥋 Centro de Graduaciones
-            </h3>
-            <div id="admin-student-list" class="admin-student-grid">
-              <div class="loading-spinner">Cargando alumnos...</div>
+          <!-- Admin Menu Grid -->
+          <div class="admin-menu-grid">
+            <button class="admin-menu-btn active" onclick="switchAdminTab('graduaciones')">
+              <span class="admin-menu-icon">🥋</span>
+              <span class="admin-menu-label">Grados</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('mensualidades')">
+              <span class="admin-menu-icon">💰</span>
+              <span class="admin-menu-label">Pagos</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('club-familia')">
+              <span class="admin-menu-icon">👨‍👩‍👧‍👦</span>
+              <span class="admin-menu-label">Familias</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('disciplinas')">
+              <span class="admin-menu-icon">⚙️</span>
+              <span class="admin-menu-label">Clases</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('novedades')">
+              <span class="admin-menu-icon">📢</span>
+              <span class="admin-menu-label">Avisos</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('videos')">
+              <span class="admin-menu-icon">🎬</span>
+              <span class="admin-menu-label">Videos</span>
+            </button>
+            <button class="admin-menu-btn" onclick="switchAdminTab('descuentos')">
+              <span class="admin-menu-icon">🎟️</span>
+              <span class="admin-menu-label">Cupones</span>
+            </button>
+          </div>
+
+          <!-- Tab 1: Graduaciones -->
+          <div id="admin-tab-graduaciones" class="admin-tab-content active">
+            <!-- Section 1: Graduaciones -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-bright);">
+                🥋 Centro de Graduaciones
+              </h3>
+              <div id="admin-student-list" class="admin-student-grid">
+                <div class="loading-spinner">Cargando alumnos...</div>
+              </div>
             </div>
           </div>
 
-          <!-- Section 2: Mensualidades -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: #34D399;">
-              💰 Control de Mensualidades
-            </h3>
-            <div id="admin-payments-list" class="admin-student-grid">
-              <div class="loading-spinner">Cargando pagos...</div>
+          <!-- Tab 2: Mensualidades -->
+          <div id="admin-tab-mensualidades" class="admin-tab-content">
+            <!-- Section 2: Control de Mensualidades -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: #34D399;">
+                💰 Control de Mensualidades (Club)
+              </h3>
+              <div id="admin-payments-list" class="admin-student-grid">
+                <div class="loading-spinner">Cargando pagos...</div>
+              </div>
             </div>
           </div>
 
-          <!-- Section 3: Disciplinas Avanzadas -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-soft);">
-              ⚙️ Creador de Disciplinas
-            </h3>
-            <div class="admin-section">
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Nombre de la Disciplina</label>
-                <input type="text" id="new-service-name" class="admin-input" placeholder="ej: BJJ Kids, Funcional">
+          <!-- Tab 3: Familias del Club -->
+          <div id="admin-tab-club-familia" class="admin-tab-content">
+            <!-- Section 2.5: Gestión de Familias (Club) -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--aurora);">
+                👨‍👩‍👧‍👦 Gestión de Familias (Club)
+              </h3>
+              <div id="admin-club-family-list" class="club-family-tree">
+                <div class="loading-spinner">Cargando grupos familiares...</div>
               </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Horarios (Texto libre)</label>
-                <input type="text" id="new-service-schedule" class="admin-input" placeholder="ej: Lun a Vie 19:00 a 20:00">
-              </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>URL Imagen Adjunta (Opcional)</label>
-                <input type="text" id="new-service-image" class="admin-input" placeholder="https://...">
-              </div>
-              <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
-                <div class="admin-input-group">
-                  <label>Cupos Limitados</label>
-                  <input type="number" id="new-service-capacity" class="admin-input" placeholder="0 = Sin límite">
-                </div>
-                <div class="admin-input-group">
-                  <label>Tipo de Clase</label>
-                  <select id="new-service-type" class="admin-input" style="height: 40px;">
-                    <option value="regular">Regular</option>
-                    <option value="seminario">Seminario / Exclusiva</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex; gap:15px; margin-bottom: 16px;">
-                <label style="color:var(--text-muted); font-size:0.85rem; display:flex; align-items:center; gap:5px;">
-                  <input type="checkbox" id="new-service-attendance"> Requiere Marcar Asistencia
-                </label>
-              </div>
-              <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin-bottom:12px;">
-              <h4 style="color:var(--text-light); margin-bottom:10px; font-size:0.9rem;">Precios y Planes (Tiers)</h4>
-              <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Ejemplo: "5 días x $45.000", "3 días x $35.000". Si solo hay un precio, llena solo el primero.</p>
-              <div id="service-tiers-container" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
-                <div class="tier-row" style="display:flex; gap:10px;">
-                  <input type="text" class="admin-input tier-name" placeholder="Nombre Plan (ej: 5 días)" style="flex:1;">
-                  <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
-                </div>
-                <div class="tier-row" style="display:flex; gap:10px;">
-                  <input type="text" class="admin-input tier-name" placeholder="Opcional (ej: 3 días)" style="flex:1;">
-                  <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
-                </div>
-                <div class="tier-row" style="display:flex; gap:10px;">
-                  <input type="text" class="admin-input tier-name" placeholder="Opcional" style="flex:1;">
-                  <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
-                </div>
-              </div>
-              
-              <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white; margin-top: 10px;"
-                onclick="handleCreateService()">
-                + CREAR DISCIPLINA
-              </button>
             </div>
           </div>
 
-          <div id="admin-services-list" class="service-grid" style="margin-top:20px;">
-            <!-- Rendered by JS -->
-          </div>
-
-          <!-- Section 4: Novedades Admin -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--aurora);">
-              📢 Gestión de Novedades
-            </h3>
-            <div class="admin-section">
-              <div class="admin-metrics" style="grid-template-columns: 1fr auto; margin-bottom: 12px;">
-                <div class="admin-input-group">
-                  <label>Título</label>
-                  <input type="text" id="new-news-title" class="admin-input" placeholder="ej: Torneo Inter-Academias">
+          <!-- Tab 4: Disciplinas -->
+          <div id="admin-tab-disciplinas" class="admin-tab-content">
+            <!-- Section 3: Disciplinas Avanzadas -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-soft);">
+                ⚙️ Creador de Disciplinas
+              </h3>
+              <div class="admin-section">
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Nombre de la Disciplina</label>
+                  <input type="text" id="new-service-name" class="admin-input" placeholder="ej: BJJ Kids, Funcional">
                 </div>
-                <div class="admin-input-group">
-                  <label>Emoji</label>
-                  <input type="text" id="new-news-emoji" class="admin-input" placeholder="🏆" style="width:60px; text-align:center;">
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Horarios (Texto libre)</label>
+                  <input type="text" id="new-service-schedule" class="admin-input" placeholder="ej: Lun a Vie 19:00 a 20:00">
                 </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>URL Imagen Adjunta (Opcional)</label>
+                  <input type="text" id="new-service-image" class="admin-input" placeholder="https://...">
+                </div>
+                <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
+                  <div class="admin-input-group">
+                    <label>Cupos Limitados</label>
+                    <input type="number" id="new-service-capacity" class="admin-input" placeholder="0 = Sin límite">
+                  </div>
+                  <div class="admin-input-group">
+                    <label>Tipo de Clase</label>
+                    <select id="new-service-type" class="admin-input" style="height: 40px;">
+                      <option value="regular">Regular</option>
+                      <option value="seminario">Seminario / Exclusiva</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:flex; gap:15px; margin-bottom: 16px;">
+                  <label style="color:var(--text-muted); font-size:0.85rem; display:flex; align-items:center; gap:5px;">
+                    <input type="checkbox" id="new-service-attendance"> Requiere Marcar Asistencia
+                  </label>
+                </div>
+                <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin-bottom:12px;">
+                <h4 style="color:var(--text-light); margin-bottom:10px; font-size:0.9rem;">Precios y Planes (Tiers)</h4>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Ejemplo: "5 días x $45.000", "3 días x $35.000". Si solo hay un precio, llena solo el primero.</p>
+                <div id="service-tiers-container" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                  <div class="tier-row" style="display:flex; gap:10px;">
+                    <input type="text" class="admin-input tier-name" placeholder="Nombre Plan (ej: 5 días)" style="flex:1;">
+                    <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
+                  </div>
+                  <div class="tier-row" style="display:flex; gap:10px;">
+                    <input type="text" class="admin-input tier-name" placeholder="Opcional (ej: 3 días)" style="flex:1;">
+                    <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
+                  </div>
+                  <div class="tier-row" style="display:flex; gap:10px;">
+                    <input type="text" class="admin-input tier-name" placeholder="Opcional" style="flex:1;">
+                    <input type="number" class="admin-input tier-price" placeholder="Precio ($)" style="width:100px;">
+                  </div>
+                </div>
+                
+                <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white; margin-top: 10px;"
+                  onclick="handleCreateService()">
+                  + CREAR DISCIPLINA
+                </button>
               </div>
-              <div class="admin-input-group" style="margin-bottom: 16px;">
-                <label>Enlace / URL (Opcional)</label>
-                <input type="text" id="new-news-link" class="admin-input" placeholder="ej: https://www.cohab.com/torneo">
-              </div>
-              <button class="auth-btn" style="background: linear-gradient(135deg, var(--aurora), #5B4FCF); color: white;"
-                onclick="handleCreateNews()">
-                + CREAR NOVEDAD
-              </button>
             </div>
-            <div id="admin-news-list" style="margin-top:16px;">
+
+            <div id="admin-services-list" class="service-grid" style="margin-top:20px;">
               <!-- Rendered by JS -->
             </div>
           </div>
 
-          <!-- Section 5: Videos Admin -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--ice);">
-              🎬 Gestión de Videos
-            </h3>
-            <div class="admin-section">
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Título del Video</label>
-                <input type="text" id="new-video-title" class="admin-input" placeholder="ej: Raspada de Mariposa">
-              </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Descripción</label>
-                <input type="text" id="new-video-desc" class="admin-input" placeholder="Breve descripción de la técnica">
-              </div>
-              <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
-                <div class="admin-input-group">
-                  <label>Duración</label>
-                  <input type="text" id="new-video-duration" class="admin-input" placeholder="3:45 min">
+          <!-- Tab 5: Novedades -->
+          <div id="admin-tab-novedades" class="admin-tab-content">
+            <!-- Section 4: Novedades Admin -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--aurora);">
+                📢 Gestión de Novedades
+              </h3>
+              <div class="admin-section">
+                <div class="admin-metrics" style="grid-template-columns: 1fr auto; margin-bottom: 12px;">
+                  <div class="admin-input-group">
+                    <label>Título</label>
+                    <input type="text" id="new-news-title" class="admin-input" placeholder="ej: Torneo Inter-Academias">
+                  </div>
+                  <div class="admin-input-group">
+                    <label>Emoji</label>
+                    <input type="text" id="new-news-emoji" class="admin-input" placeholder="🏆" style="width:60px; text-align:center;">
+                  </div>
                 </div>
-                <div class="admin-input-group">
-                  <label>Instructor</label>
-                  <input type="text" id="new-video-instructor" class="admin-input" placeholder="Prof. Andrés">
+                <div class="admin-input-group" style="margin-bottom: 16px;">
+                  <label>Enlace / URL (Opcional)</label>
+                  <input type="text" id="new-news-link" class="admin-input" placeholder="ej: https://www.cohab.com/torneo">
                 </div>
+                <button class="auth-btn" style="background: linear-gradient(135deg, var(--aurora), #5B4FCF); color: white;"
+                  onclick="handleCreateNews()">
+                  + CREAR NOVEDAD
+                </button>
               </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>URL Thumbnail</label>
-                <input type="text" id="new-video-thumb" class="admin-input" placeholder="assets/thumb-X.png o URL">
+              <div id="admin-news-list" style="margin-top:16px;">
+                <!-- Rendered by JS -->
               </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>URL del Video (YouTube)</label>
-                <input type="text" id="new-video-url" class="admin-input" placeholder="https://www.youtube.com/watch?v=...">
-              </div>
-              <div style="display:flex; align-items:center; gap:10px; margin-bottom: 16px;">
-                <input type="checkbox" id="new-video-featured" style="width:18px; height:18px;">
-                <label for="new-video-featured" style="font-size:0.85rem; color:var(--text-muted);">Marcar como Video Destacado</label>
-              </div>
-              <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white;"
-                onclick="handleCreateVideo()">
-                + CREAR VIDEO
-              </button>
-            </div>
-            <div id="admin-videos-list" style="margin-top:16px;">
-              <!-- Rendered by JS -->
             </div>
           </div>
-        
-          <!-- Section 6: Descuentos Admin -->
-          <div class="admin-form-glass" style="margin-top: 20px;">
-            <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: #F59E0B;">
-              🎟️ Creador de Descuentos
-            </h3>
-            <div class="admin-section">
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Título del Beneficio</label>
-                <input type="text" id="new-discount-title" class="admin-input" placeholder="ej: 20% en Suplementos">
+
+          <!-- Tab 6: Videos -->
+          <div id="admin-tab-videos" class="admin-tab-content">
+            <!-- Section 5: Videos Admin -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--ice);">
+                🎬 Gestión de Videos
+              </h3>
+              <div class="admin-section">
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Título del Video</label>
+                  <input type="text" id="new-video-title" class="admin-input" placeholder="ej: Raspada de Mariposa">
+                </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Descripción</label>
+                  <input type="text" id="new-video-desc" class="admin-input" placeholder="Breve descripción de la técnica">
+                </div>
+                <div class="admin-metrics" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
+                  <div class="admin-input-group">
+                    <label>Duración</label>
+                    <input type="text" id="new-video-duration" class="admin-input" placeholder="3:45 min">
+                  </div>
+                  <div class="admin-input-group">
+                    <label>Instructor</label>
+                    <input type="text" id="new-video-instructor" class="admin-input" placeholder="Prof. Andrés">
+                  </div>
+                </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>URL Thumbnail</label>
+                  <input type="text" id="new-video-thumb" class="admin-input" placeholder="assets/thumb-X.png o URL">
+                </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>URL del Video (YouTube)</label>
+                  <input type="text" id="new-video-url" class="admin-input" placeholder="https://www.youtube.com/watch?v=...">
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom: 16px;">
+                  <input type="checkbox" id="new-video-featured" style="width:18px; height:18px;">
+                  <label for="new-video-featured" style="font-size:0.85rem; color:var(--text-muted);">Marcar como Video Destacado</label>
+                </div>
+                <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson), var(--crimson-deep)); color: white;"
+                  onclick="handleCreateVideo()">
+                  + CREAR VIDEO
+                </button>
               </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>Código o Instrucciones</label>
-                <input type="text" id="new-discount-code" class="admin-input" placeholder="ej: Usa el código COHAB20">
+              <div id="admin-videos-list" style="margin-top:16px;">
+                <!-- Rendered by JS -->
               </div>
-              <div class="admin-input-group" style="margin-bottom: 12px;">
-                <label>URL Imagen (Recomendado)</label>
-                <input type="text" id="new-discount-image" class="admin-input" placeholder="https://...">
-              </div>
-              <button class="auth-btn" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white;"
-                onclick="handleCreateDiscount()">
-                + CREAR BENEFICIO
-              </button>
             </div>
-            <div id="admin-discounts-list" class="service-grid" style="margin-top:20px;">
-              <!-- Rendered by JS -->
+          </div>
+
+          <!-- Tab 7: Descuentos -->
+          <div id="admin-tab-descuentos" class="admin-tab-content">
+            <!-- Section 6: Descuentos Admin -->
+            <div class="admin-form-glass" style="margin-top: 0;">
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: #F59E0B;">
+                🎟️ Creador de Descuentos
+              </h3>
+              <div class="admin-section">
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Título del Beneficio</label>
+                  <input type="text" id="new-discount-title" class="admin-input" placeholder="ej: 20% en Suplementos">
+                </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>Código o Instrucciones</label>
+                  <input type="text" id="new-discount-code" class="admin-input" placeholder="ej: Usa el código COHAB20">
+                </div>
+                <div class="admin-input-group" style="margin-bottom: 12px;">
+                  <label>URL Imagen (Recomendado)</label>
+                  <input type="text" id="new-discount-image" class="admin-input" placeholder="https://...">
+                </div>
+                <button class="auth-btn" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white;"
+                  onclick="handleCreateDiscount()">
+                  + CREAR BENEFICIO
+                </button>
+              </div>
+              <div id="admin-discounts-list" class="service-grid" style="margin-top:20px;">
+                <!-- Rendered by JS -->
+              </div>
             </div>
           </div>
 </div>

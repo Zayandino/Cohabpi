@@ -65,6 +65,8 @@ let currentUser = null;
 let services = [];
 let toastTimeout = null;
 let authMode = 'login'; // 'login' or 'register'
+let selectedAttendanceDate = new Date();
+let todayAllCheckins = [];
 
 // Enrollment State
 let familyMembers = [
@@ -102,9 +104,8 @@ window.addEventListener('load', async () => {
     });
   });
 
-  // BYPASS AUTH FOR DEBUGGING
-  loginSuccess('Eduardo Javier Ambler Rios', true, '8b91dbf8-fa08-410a-8bf8-000000000000', 'ambler.eduardo@gmail.com');
-  return;
+  // Check Session
+  const { data: { session }, error: sessionError } = await _supabase.auth.getSession();
   
   // Check Password Recovery Hash Map
   const hash = window.location.hash;
@@ -408,6 +409,9 @@ async function loginSuccess(name, isAdmin, userId, email) {
   renderDiscountsList();
   if (isAdmin) renderAdminDiscountsList();
 
+  // Fetch services/disciplines for all users to allow capacity/quota calculations
+  await fetchServices();
+
   // Fetch Family Data dynamically instead of relying on hardcoded array
   await fetchFamilyMembers();
 
@@ -624,6 +628,18 @@ function navigateTo(screenName) {
 
     if (screenName === 'profile') {
       loadProfileData();
+
+      // Mostrar/Ocultar el gestor familiar del alumno según rol de admin
+      const famContainer = document.getElementById('profile-family-container');
+      const isAdmin = currentUser && (currentUser.isAdmin || currentUser.email === 'ambler.eduardo@gmail.com');
+      if (famContainer) {
+        famContainer.style.display = isAdmin ? 'none' : 'block';
+      }
+
+      // Renderizar listas de familia correspondientes
+      if (typeof renderProfileFamilyList === 'function') renderProfileFamilyList();
+      if (isAdmin && typeof renderClubFamilyGroups === 'function') renderClubFamilyGroups();
+
       if (typeof renderAdminServicesList === 'function') renderAdminServicesList();
       if (typeof renderAdminNewsList === 'function') renderAdminNewsList();
       if (typeof renderAdminVideosList === 'function') renderAdminVideosList();
@@ -974,8 +990,10 @@ async function fetchServices() {
 
   if (!error && data.length > 0) {
     services = data;
-    updateAdminMetrics();
-    renderAdminServicesList();
+    if (currentUser && currentUser.isAdmin) {
+      updateAdminMetrics();
+      renderAdminServicesList();
+    }
   }
 }
 
@@ -1252,25 +1270,48 @@ function updatePlanPrices(monthlyPrice) {
 let attendanceRecords = [];
 
 async function fetchAttendance() {
+  await fetchDayAttendanceAndRender();
+}
+
+async function fetchDayAttendanceAndRender() {
   if (!currentUser) return;
 
-  try {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const dateStart = new Date(selectedAttendanceDate);
+  dateStart.setHours(0,0,0,0);
+  const dateEnd = new Date(selectedAttendanceDate);
+  dateEnd.setHours(23,59,59,999);
 
-    const { data, error } = await _supabase
+  try {
+    // 1. Obtener la asistencia personal para el mes de la fecha seleccionada para pintar los dots del calendario
+    const firstDay = new Date(selectedAttendanceDate.getFullYear(), selectedAttendanceDate.getMonth(), 1).toISOString();
+    const { data: userCheckins, error: userErr } = await _supabase
       .from('cohab_attendance')
       .select('*')
       .eq('profile_id', currentUser.id)
       .gte('checked_at', firstDay)
       .order('checked_at', { ascending: false });
 
-    if (!error && data) {
-      attendanceRecords = data;
-      renderAttendanceUI();
+    if (!userErr && userCheckins) {
+      attendanceRecords = userCheckins;
     }
-  } catch (error) {
-    console.error('Error fetching attendance:', error);
+
+    // 2. Obtener TODA la asistencia de este día para contar cupos restantes
+    const { data: allCheckins, error: allErr } = await _supabase
+      .from('cohab_attendance')
+      .select('id, class_type, profile_id')
+      .gte('checked_at', dateStart.toISOString())
+      .lte('checked_at', dateEnd.toISOString());
+
+    if (!allErr && allCheckins) {
+      todayAllCheckins = allCheckins;
+    } else {
+      todayAllCheckins = [];
+    }
+
+    // 3. Renderizar la UI
+    renderAttendanceUI();
+  } catch (err) {
+    console.error('Error fetching day attendance:', err);
   }
 }
 
@@ -1284,46 +1325,147 @@ function renderAttendanceUI() {
   const countEl = document.getElementById('attendance-count');
   if (countEl) countEl.textContent = attendanceRecords.length;
 
-  const today = new Date().toDateString();
+  const todayStr = new Date().toDateString();
+  const selectedDayStr = selectedAttendanceDate.toDateString();
+  const isSelectedToday = selectedDayStr === todayStr;
+
+  // Actualizar el título de la sección de clases dinámicamente
+  const titleEl = document.getElementById('classes-section-title');
+  if (titleEl) {
+    if (isSelectedToday) {
+      titleEl.textContent = 'Clases de Hoy';
+    } else {
+      const options = { weekday: 'long', day: 'numeric', month: 'short' };
+      const dayName = selectedAttendanceDate.toLocaleDateString('es-CL', options);
+      titleEl.textContent = `Clases del ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}`;
+    }
+  }
+
   const listEl = document.getElementById('today-classes-list');
   
   if (listEl) {
     listEl.innerHTML = TODAY_CLASSES.map(cls => {
-      // Check if user attended this specific class today
+      // Buscar servicio correspondiente para verificar cupos
+      const service = services.find(s => {
+        const sName = s.name.toLowerCase();
+        if (cls.id === 'bjj_am' && (sName.includes('mediodía') || sName.includes('am'))) return true;
+        if (cls.id === 'bjj_pm' && (sName.includes('noche') || sName.includes('pm'))) return true;
+        if (cls.id === 'nogi' && sName.includes('nogi')) return true;
+        return sName.includes(cls.name.toLowerCase());
+      });
+
+      const maxCapacity = service ? (service.capacity_limit || 0) : 0;
+      
+      // Contar checkins de hoy para esta clase
+      const enrolledCount = todayAllCheckins.filter(r => r.class_type === cls.id).length;
+      const spotsLeft = Math.max(0, maxCapacity - enrolledCount);
+
+      // Verificar si el usuario asistió a esta clase específica en el día seleccionado
       const attended = attendanceRecords.some(
-        r => new Date(r.checked_at).toDateString() === today && r.class_type === cls.id
+        r => new Date(r.checked_at).toDateString() === selectedDayStr && r.class_type === cls.id
       );
 
       if (attended) {
-        return `
-          <div class="class-card attended">
-            <div class="class-info">
-              <span class="class-icon">${cls.icon}</span>
-              <div>
-                <div class="class-name">${cls.name}</div>
-                <div class="class-time">${cls.time}</div>
+        if (isSelectedToday) {
+          // Si es hoy y ya asistió, mostrar botón para "Desmarcar"
+          return `
+            <div class="class-card attended">
+              <div class="class-info">
+                <span class="class-icon">${cls.icon}</span>
+                <div>
+                  <div class="class-name">${cls.name}</div>
+                  <div class="class-time">
+                    ${cls.time}
+                    ${maxCapacity > 0 ? `<span style="font-size:0.75rem; color:var(--text-muted); margin-left:8px;">• ${spotsLeft} / ${maxCapacity} cupos libres</span>` : '• Cupo Libre'}
+                  </div>
+                </div>
               </div>
+              <button class="checkin-btn cancel" onclick="handleCancelCheckIn('${cls.id}', '${cls.name}')">
+                Desmarcar
+              </button>
             </div>
-            <button class="checkin-btn disabled" disabled>
-              ✔ Listo
-            </button>
-          </div>
-        `;
+          `;
+        } else {
+          // Si es un día pasado/futuro, mostrar como ✔ Listo (Lectura)
+          return `
+            <div class="class-card attended">
+              <div class="class-info">
+                <span class="class-icon">${cls.icon}</span>
+                <div>
+                  <div class="class-name">${cls.name}</div>
+                  <div class="class-time">
+                    ${cls.time}
+                    ${maxCapacity > 0 ? `<span style="font-size:0.75rem; color:var(--text-muted); margin-left:8px;">• ${spotsLeft} / ${maxCapacity} cupos libres</span>` : '• Cupo Libre'}
+                  </div>
+                </div>
+              </div>
+              <button class="checkin-btn read-only" disabled>
+                ✔ Listo
+              </button>
+            </div>
+          `;
+        }
       } else {
-        return `
-          <div class="class-card">
-            <div class="class-info">
-              <span class="class-icon">${cls.icon}</span>
-              <div>
-                <div class="class-name">${cls.name}</div>
-                <div class="class-time">${cls.time}</div>
+        if (isSelectedToday) {
+          if (maxCapacity > 0 && spotsLeft <= 0) {
+            // Si no quedan cupos hoy
+            return `
+              <div class="class-card">
+                <div class="class-info">
+                  <span class="class-icon">${cls.icon}</span>
+                  <div>
+                    <div class="class-name">${cls.name}</div>
+                    <div class="class-time">
+                      ${cls.time}
+                      <span style="font-size:0.75rem; color:var(--crimson-bright); margin-left:8px; font-weight:bold;">• Sin Cupos</span>
+                    </div>
+                  </div>
+                </div>
+                <button class="checkin-btn disabled" disabled>
+                  Lleno
+                </button>
               </div>
+            `;
+          } else {
+            // Si quedan cupos hoy, permitir marcar
+            return `
+              <div class="class-card">
+                <div class="class-info">
+                  <span class="class-icon">${cls.icon}</span>
+                  <div>
+                    <div class="class-name">${cls.name}</div>
+                    <div class="class-time">
+                      ${cls.time}
+                      ${maxCapacity > 0 ? `<span style="font-size:0.75rem; color:var(--text-muted); margin-left:8px;">• ${spotsLeft} / ${maxCapacity} cupos libres</span>` : '• Cupo Libre'}
+                    </div>
+                  </div>
+                </div>
+                <button class="checkin-btn" onclick="handleCheckIn('${cls.id}', '${cls.name}')">
+                  Marcar
+                </button>
+              </div>
+            `;
+          }
+        } else {
+          // Si es un día pasado/futuro que no asistió, deshabilitar botón de marcar
+          return `
+            <div class="class-card">
+              <div class="class-info">
+                <span class="class-icon">${cls.icon}</span>
+                <div>
+                  <div class="class-name">${cls.name}</div>
+                  <div class="class-time">
+                    ${cls.time}
+                    ${maxCapacity > 0 ? `<span style="font-size:0.75rem; color:var(--text-muted); margin-left:8px;">• ${spotsLeft} / ${maxCapacity} cupos libres</span>` : '• Cupo Libre'}
+                  </div>
+                </div>
+              </div>
+              <button class="checkin-btn read-only" disabled>
+                Marcar
+              </button>
             </div>
-            <button class="checkin-btn" onclick="handleCheckIn('${cls.id}', '${cls.name}')">
-              Marcar
-            </button>
-          </div>
-        `;
+          `;
+        }
       }
     }).join('');
   }
@@ -1340,11 +1482,12 @@ function renderWeekCalendar() {
   const container = document.getElementById('week-calendar');
   if (!container) return;
 
-  const dayNames = ['Lun', 'Mar', 'Mi\u00e9', 'Jue', 'Vie', 'S\u00e1b', 'Dom'];
+  const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const now = new Date();
-  const todayDate = now.getDate();
+  const todayStr = now.toDateString();
+  const selectedStr = selectedAttendanceDate.toDateString();
 
-  // Get Monday of current week
+  // Obtener lunes de la semana actual
   const dayOfWeek = now.getDay();
   const monday = new Date(now);
   monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
@@ -1354,14 +1497,16 @@ function renderWeekCalendar() {
     const day = new Date(monday);
     day.setDate(monday.getDate() + i);
     const dayNum = day.getDate();
-    const isToday = dayNum === todayDate && day.getMonth() === now.getMonth();
+    const isToday = day.toDateString() === todayStr;
+    const isSelected = day.toDateString() === selectedStr;
 
+    // Verificar si el usuario asistió este día en específico
     const attended = attendanceRecords.some(
       r => new Date(r.checked_at).toDateString() === day.toDateString()
     );
 
     html += `
-      <div class="week-day ${isToday ? 'today' : ''} ${attended ? 'attended' : ''}">
+      <div class="week-day ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${attended ? 'attended' : ''}" onclick="selectAttendanceDate('${day.toISOString()}')">
         <div class="day-label">${dayNames[i]}</div>
         <div class="day-num">${dayNum}</div>
         <div class="day-dot"></div>
@@ -1372,12 +1517,22 @@ function renderWeekCalendar() {
   container.innerHTML = html;
 }
 
+function selectAttendanceDate(dateStr) {
+  selectedAttendanceDate = new Date(dateStr);
+  fetchDayAttendanceAndRender();
+}
+
 async function handleCheckIn(classId = 'BJJ', className = 'Clase') {
   if (!currentUser) return;
 
-  const today = new Date().toDateString();
+  const todayStr = new Date().toDateString();
+  if (selectedAttendanceDate.toDateString() !== todayStr) {
+    showToast('⚠️ Solo puedes registrar asistencia para el día de hoy');
+    return;
+  }
+
   const alreadyChecked = attendanceRecords.some(
-    r => new Date(r.checked_at).toDateString() === today && r.class_type === classId
+    r => new Date(r.checked_at).toDateString() === todayStr && r.class_type === classId
   );
 
   if (alreadyChecked) {
@@ -1388,6 +1543,36 @@ async function handleCheckIn(classId = 'BJJ', className = 'Clase') {
   showToast(`Registrando asistencia en ${className}...`);
 
   try {
+    // 1. Validar límite de cupo actual en tiempo real para evitar condiciones de carrera (Race Conditions)
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23,59,59,999);
+
+    const { data: latestCheckins } = await _supabase
+      .from('cohab_attendance')
+      .select('id')
+      .eq('class_type', classId)
+      .gte('checked_at', todayStart.toISOString())
+      .lte('checked_at', todayEnd.toISOString());
+
+    const service = services.find(s => {
+      const sName = s.name.toLowerCase();
+      if (classId === 'bjj_am' && (sName.includes('mediodía') || sName.includes('am'))) return true;
+      if (classId === 'bjj_pm' && (sName.includes('noche') || sName.includes('pm'))) return true;
+      if (classId === 'nogi' && sName.includes('nogi')) return true;
+      return sName.includes(className.toLowerCase());
+    });
+
+    const maxCapacity = service ? (service.capacity_limit || 0) : 0;
+    
+    if (maxCapacity > 0 && latestCheckins && latestCheckins.length >= maxCapacity) {
+      showToast('❌ Lo sentimos, la clase ya se encuentra sin cupos disponibles');
+      await fetchDayAttendanceAndRender();
+      return;
+    }
+
+    // 2. Insertar el registro de asistencia
     const { data, error } = await _supabase
       .from('cohab_attendance')
       .insert([{ profile_id: currentUser.id, class_type: classId }])
@@ -1398,13 +1583,54 @@ async function handleCheckIn(classId = 'BJJ', className = 'Clase') {
       return;
     }
 
-    attendanceRecords.unshift(data[0]);
-    renderAttendanceUI();
-    celebrate();
     showToast(`✅ ¡Asistencia en ${className} registrada! Sigue entrenando 🥋`);
+    await fetchDayAttendanceAndRender();
+    celebrate();
   } catch (error) {
     console.error('Check-in error:', error);
     showToast('❌ Error al registrar asistencia');
+  }
+}
+
+async function handleCancelCheckIn(classId = 'BJJ', className = 'Clase') {
+  if (!currentUser) return;
+
+  const todayStr = new Date().toDateString();
+  if (selectedAttendanceDate.toDateString() !== todayStr) {
+    showToast('⚠️ Solo puedes cancelar asistencia para el día de hoy');
+    return;
+  }
+
+  if (!confirm(`¿Estás seguro de que deseas cancelar tu asistencia en ${className} y liberar tu cupo?`)) {
+    return;
+  }
+
+  showToast(`Cancelando asistencia en ${className}...`);
+
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23,59,59,999);
+
+    const { error } = await _supabase
+      .from('cohab_attendance')
+      .delete()
+      .eq('profile_id', currentUser.id)
+      .eq('class_type', classId)
+      .gte('checked_at', todayStart.toISOString())
+      .lte('checked_at', todayEnd.toISOString());
+
+    if (error) {
+      showToast(`❌ Error: ${error.message}`);
+      return;
+    }
+
+    showToast(`✅ Asistencia cancelada en ${className}`);
+    await fetchDayAttendanceAndRender();
+  } catch (error) {
+    console.error('Cancel check-in error:', error);
+    showToast('❌ Error al cancelar asistencia');
   }
 }
 
@@ -2271,6 +2497,7 @@ async function fetchFamilyMembers() {
 
     renderMemberSelector();
     renderFamilyDashboardSwitch();
+    if (typeof renderProfileFamilyList === 'function') renderProfileFamilyList();
 
     const dashboardMember = familyMembers.find(m => m.id === dashboardMemberId) || familyMembers[0];
     updateRankDisplay(dashboardMember);
@@ -2280,6 +2507,7 @@ async function fetchFamilyMembers() {
     familyMembers = [{ id: 'me', name: currentUser.name ? currentUser.name.split(' ')[0] : 'Yo', icon: '🥋', belt: 'white', graus: 0, progress: 0, attendance: [] }];
     renderMemberSelector();
     renderFamilyDashboardSwitch();
+    if (typeof renderProfileFamilyList === 'function') renderProfileFamilyList();
     updateRankDisplay(familyMembers[0]);
   }
 }
@@ -2346,7 +2574,9 @@ async function addNewMember() {
     });
 
     selectMember(d.id);
+    renderMemberSelector();
     renderFamilyDashboardSwitch();
+    if (typeof renderProfileFamilyList === 'function') renderProfileFamilyList();
     showToast(`✅ ${name} añadido a tu cuenta.`);
   } catch (err) {
     console.error('Add family member error:', err);
@@ -2444,4 +2674,273 @@ function openPlanSelector(memberId) {
 function closePlanSelector() {
   const modal = document.getElementById('plan-modal');
   if (modal) modal.style.display = 'none';
+}
+
+// ==========================================
+// NUEVA LÓGICA DE CONTROL: PERFIL, PESTAÑAS Y FAMILIAS
+// ==========================================
+
+/**
+ * Conmutador compacto para el menú de administración del Sensei / Profesor
+ */
+function switchAdminTab(tabName) {
+  try {
+    const tabs = document.querySelectorAll('.admin-menu-btn');
+    const contents = document.querySelectorAll('.admin-tab-content');
+
+    tabs.forEach(tab => tab.classList.remove('active'));
+    contents.forEach(content => content.classList.remove('active'));
+
+    // Encontrar botón correspondiente
+    const selectedBtn = Array.from(tabs).find(tab => {
+      const onclickAttr = tab.getAttribute('onclick') || '';
+      return onclickAttr.includes(`'${tabName}'`) || onclickAttr.includes(`"${tabName}"`);
+    });
+    
+    if (selectedBtn) {
+      selectedBtn.classList.add('active');
+    }
+
+    // Activar contenedor de contenido correspondiente
+    const targetContent = document.getElementById(`admin-tab-${tabName}`);
+    if (targetContent) {
+      targetContent.classList.add('active');
+    }
+
+    // Carga de datos perezosa según la pestaña activa
+    if (tabName === 'club-familia') {
+      renderClubFamilyGroups();
+    } else if (tabName === 'graduaciones' || tabName === 'mensualidades') {
+      if (typeof fetchAllStudents === 'function') fetchAllStudents();
+    } else if (tabName === 'disciplinas') {
+      if (typeof renderAdminServicesList === 'function') renderAdminServicesList();
+    } else if (tabName === 'novedades') {
+      if (typeof renderAdminNewsList === 'function') renderAdminNewsList();
+    } else if (tabName === 'videos') {
+      if (typeof renderAdminVideosList === 'function') renderAdminVideosList();
+    } else if (tabName === 'descuentos') {
+      if (typeof renderAdminDiscountsList === 'function') renderAdminDiscountsList();
+    }
+  } catch (error) {
+    console.error('Error switching admin tab:', error);
+  }
+}
+
+/**
+ * Renderiza el listado familiar del Alumno dentro de su pantalla Perfil
+ */
+function renderProfileFamilyList() {
+  const listEl = document.getElementById('profile-family-list');
+  if (!listEl) return;
+
+  const secondaryMembers = familyMembers.filter(m => m.id !== 'me');
+
+  if (secondaryMembers.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state" style="text-align:center; padding:15px; color:var(--text-muted); font-size:0.85rem;">
+        No has registrado ningún familiar aún. Puedes añadir haciendo clic en el botón "+".
+      </div>
+    `;
+    return;
+  }
+
+  const beltNames = { 
+    'white': 'Cinturón Blanco', 
+    'blue': 'Cinturón Azul', 
+    'purple': 'Cinturón Morado', 
+    'brown': 'Cinturón Marrón', 
+    'black': 'Cinturón Negro', 
+    'No Belt': 'Sin Cinturón' 
+  };
+
+  listEl.innerHTML = secondaryMembers.map(m => {
+    const beltLabel = beltNames[m.belt] || m.belt || 'Cinturón Blanco';
+    return `
+      <div class="service-card-full" style="padding:15px; border-left:3px solid var(--aurora); background:var(--bg-elevated); margin-bottom:8px; border-radius:10px; display:block;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="font-size:1.8rem; background:rgba(255,255,255,0.05); width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+              ${m.icon}
+            </div>
+            <div>
+              <h4 style="margin:0; font-size:1rem; color:var(--text-white);">${m.name}</h4>
+              <p style="margin:2px 0 0 0; font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:5px;">
+                <span class="belt-dot belt-${m.belt || 'white'}"></span> ${beltLabel} ${m.graus ? `(${m.graus} Graus)` : ''}
+              </p>
+            </div>
+          </div>
+          <button type="button" class="auth-btn" style="background:rgba(239,68,68,0.1); color:#EF4444; border:1px solid rgba(239,68,68,0.2); padding:6px 12px; font-size:0.75rem; min-width:auto; height:auto; border-radius:6px; cursor:pointer;" onclick="handleDeleteFamilyMember('${m.id}', '${m.name.replace(/'/g, "\\'")}')">
+            ELIMINAR
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * Elimina de manera segura un familiar en cascada (Familiares -> Perfiles -> Suscripciones)
+ */
+async function handleDeleteFamilyMember(id, name) {
+  if (!confirm(`¿Estás seguro de que deseas eliminar a ${name} de tu familia? Se eliminarán también sus suscripciones asociadas.`)) return;
+
+  showToast(`Eliminando a ${name}...`);
+
+  try {
+    // 1. Eliminar de cohab_family_members
+    const { error: error1 } = await _supabase
+      .from('cohab_family_members')
+      .delete()
+      .eq('id', id);
+
+    if (error1) console.warn("Error deleting from cohab_family_members:", error1);
+
+    // 2. Eliminar de cohab_profiles
+    const { error: error2 } = await _supabase
+      .from('cohab_profiles')
+      .delete()
+      .eq('id', id);
+
+    if (error2) console.warn("Error deleting from cohab_profiles:", error2);
+
+    // 3. Eliminar suscripciones huérfanas
+    const { error: error3 } = await _supabase
+      .from('cohab_subscriptions')
+      .delete()
+      .eq('profile_id', id);
+
+    if (error3) console.warn("Error deleting subscriptions:", error3);
+
+    // 4. Actualizar estado local
+    familyMembers = familyMembers.filter(m => m.id !== id);
+    if (currentMemberId === id) currentMemberId = 'me';
+    if (dashboardMemberId === id) dashboardMemberId = 'me';
+
+    // 5. Renderizar cambios
+    renderMemberSelector();
+    renderFamilyDashboardSwitch();
+    renderProfileFamilyList();
+    
+    // Si somos administrador, también actualizamos el listado global del club
+    if (currentUser && (currentUser.isAdmin || currentUser.email === 'ambler.eduardo@gmail.com')) {
+      renderClubFamilyGroups();
+    }
+
+    showToast(`✅ ${name} ha sido eliminado con éxito.`);
+  } catch (err) {
+    console.error('Error deleting family member:', err);
+    showToast("❌ Hubo un error al eliminar el familiar.");
+  }
+}
+
+/**
+ * Renderiza todos los grupos familiares de la academia agrupados por su titular (Apoderado)
+ */
+async function renderClubFamilyGroups() {
+  const container = document.getElementById('admin-club-family-list');
+  if (!container) return;
+
+  container.innerHTML = '<div class="loading-spinner">Cargando relaciones familiares del club...</div>';
+
+  try {
+    // 1. Cargar miembros familiares
+    const { data: familyRelations, error: relationsError } = await _supabase
+      .from('cohab_family_members')
+      .select('*');
+
+    if (relationsError) throw relationsError;
+
+    // 2. Cargar todos los perfiles de alumnos
+    const { data: profiles, error: profilesError } = await _supabase
+      .from('cohab_profiles')
+      .select('id, name, email, belt, role');
+
+    if (profilesError) throw profilesError;
+
+    // Crear mapa de perfiles para acceso rápido
+    const profileMap = {};
+    profiles.forEach(p => {
+      profileMap[p.id] = p;
+    });
+
+    // 3. Agrupar miembros familiares por su parent_id (titular/tutor)
+    const groups = {};
+    familyRelations.forEach(rel => {
+      const parentId = rel.parent_id;
+      if (!groups[parentId]) {
+        groups[parentId] = [];
+      }
+      groups[parentId].push(rel);
+    });
+
+    const parentIds = Object.keys(groups);
+    if (parentIds.length === 0) {
+      container.innerHTML = '<p class="empty-state" style="text-align:center; padding:20px; color:var(--text-muted);">No se han registrado relaciones familiares en el club aún.</p>';
+      return;
+    }
+
+    const beltNames = { 
+      'white': 'Blanco', 
+      'blue': 'Azul', 
+      'purple': 'Morado', 
+      'brown': 'Marrón', 
+      'black': 'Negro', 
+      'No Belt': 'Sin Cinturón' 
+    };
+
+    // Renderizar grupos familiares premium
+    container.innerHTML = parentIds.map(parentId => {
+      const parentProfile = profileMap[parentId] || { name: 'Titular de Cuenta', email: 'Sin correo' };
+      const children = groups[parentId];
+
+      const childrenHtml = children.map(child => {
+        const dbChildProfile = profileMap[child.id];
+        const childBelt = dbChildProfile?.belt || child.belt || 'white';
+        const childGraus = dbChildProfile?.graus || child.graus || 0;
+        const beltLabel = beltNames[childBelt] || childBelt;
+        
+        return `
+          <div class="club-family-child-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:rgba(255,255,255,0.02); border-radius:6px; margin-bottom:6px; border-left:2px solid var(--aurora);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:1.2rem;">👦</span>
+              <div>
+                <span style="font-weight:600; color:var(--text-white); font-size:0.9rem;">${child.name}</span>
+                <span style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; margin-top:2px;">
+                  Grado: <span class="belt-dot belt-${childBelt}"></span> ${beltLabel} ${childGraus ? `(${childGraus} Graus)` : ''}
+                </span>
+              </div>
+            </div>
+            <button type="button" class="auth-btn" style="background:rgba(239,68,68,0.1); color:#EF4444; border:none; padding:4px 8px; font-size:0.7rem; min-width:auto; height:auto; border-radius:4px; cursor:pointer;" onclick="handleDeleteFamilyMember('${child.id}', '${child.name.replace(/'/g, "\\'")}')">
+              Quitar
+            </button>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="club-family-group" style="background:var(--bg-elevated); border:1px solid var(--border-glass); padding:16px; border-radius:12px; margin-bottom:15px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+          <!-- Titular / Parent -->
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:10px;">
+            <div style="font-size:1.6rem; background:rgba(91,79,207,0.15); width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--aurora);">
+              🥋
+            </div>
+            <div>
+              <h4 style="margin:0; font-size:1.05rem; color:var(--text-white); font-family:var(--font-display);">${parentProfile.name}</h4>
+              <p style="margin:2px 0 0 0; font-size:0.75rem; color:var(--text-muted);">${parentProfile.email || 'Sin Correo'} (Titular)</p>
+            </div>
+          </div>
+          
+          <!-- Miembros Familiares -->
+          <div style="display:flex; flex-direction:column;">
+            <div style="font-size:0.75rem; text-transform:uppercase; font-weight:800; letter-spacing:1px; color:var(--aurora); margin-bottom:8px; opacity:0.8;">Cargas Familiares:</div>
+            ${childrenHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (error) {
+    console.error('Error rendering club family groups:', error);
+    container.innerHTML = '<p class="empty-state" style="color:var(--crimson-bright); text-align:center;">❌ Error al cargar los grupos familiares de la academia.</p>';
+  }
 }

@@ -1454,6 +1454,7 @@ body {
   margin-left: 8px;
   vertical-align: middle;
   box-shadow: 0 0 10px var(--crimson-glow);
+  -webkit-text-fill-color: initial !important;
 }
 
 /* --- Admin & Service Management --- */
@@ -2941,5 +2942,149 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
+}
+
+/* ===== MEJORAS PANEL ADMINISTRATIVO Y GESTION FAMILIAR ===== */
+
+.admin-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+  margin-bottom: 20px;
+}
+
+@media (min-width: 768px) {
+  .admin-menu-grid {
+    grid-template-columns: repeat(7, 1fr);
+  }
+}
+
+.admin-menu-btn {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 12px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-out);
+}
+
+.admin-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.admin-menu-btn.active {
+  background: linear-gradient(135deg, var(--crimson-deep), var(--crimson));
+  border-color: var(--crimson-bright);
+  box-shadow: 0 0 15px var(--crimson-glow);
+}
+
+.admin-menu-btn .admin-menu-icon {
+  font-size: 1.3rem;
+}
+
+.admin-menu-btn .admin-menu-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-menu-btn.active .admin-menu-label {
+  color: white;
+}
+
+.admin-tab-content {
+  display: none;
+  animation: tabFadeIn 0.35s ease-out forwards;
+}
+
+.admin-tab-content.active {
+  display: block;
+}
+
+@keyframes tabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Estilos de árbol de familia para el administrador */
+.club-family-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.club-family-group {
+  background: var(--bg-glass-strong);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+
+.club-family-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.club-family-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 10px;
+}
+
+/* --- Asistencia: Selección de Día y Cancelación --- */
+.week-day {
+  cursor: pointer;
+  transition: all 0.25s var(--ease-out);
+}
+.week-day:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.05);
+}
+.week-day.selected {
+  border-color: var(--aurora) !important;
+  background: rgba(91, 79, 207, 0.15) !important;
+  box-shadow: 0 0 12px rgba(91, 79, 207, 0.25) !important;
+}
+.week-day.selected .day-num {
+  color: var(--aurora) !important;
+  font-weight: 800;
+}
+.checkin-btn.cancel {
+  background: linear-gradient(135deg, #EF4444, #DC2626) !important;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3) !important;
+  color: white !important;
+  border: none !important;
+}
+.checkin-btn.cancel:hover {
+  background: linear-gradient(135deg, #F87171, #EF4444) !important;
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4) !important;
+  transform: translateY(-2px);
+}
+.checkin-btn.read-only {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
 }
 
