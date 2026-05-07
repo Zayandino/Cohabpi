@@ -86,8 +86,10 @@
           <!-- Greeting -->
           <div class="greeting-block">
             <div class="greeting-hello">Bienvenido de vuelta</div>
-            <div class="greeting-name"><span id="user-display-name">[Alumno]</span> <span id="admin-badge"
-                class="admin-badge" style="display:none">ADMIN</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+              <div class="greeting-name" style="margin-bottom: 0;"><span id="user-display-name">[Alumno]</span></div>
+              <span id="admin-badge" class="admin-badge" style="display:none">ADMIN</span>
+            </div>
           </div>
 
           <!-- Smart Quick Actions -->
@@ -416,6 +418,11 @@
               <h2 id="profile-full-name-display" style="font-family:var(--font-display); margin: 0; font-size: 1.6rem; color: #fff;">Cargando...</h2>
               <p id="profile-role-display" style="margin: 5px 0 0 0; font-size: 0.85rem; color: var(--aurora); text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Alumno</p>
             </div>
+          </div>
+
+          <!-- Membership Status Container -->
+          <div id="profile-membership-container" style="margin-top: 25px;">
+            <!-- Rendered by JS -->
           </div>
 
           <!-- Edit Profile Form -->
@@ -969,7 +976,7 @@
   </div>
 
   <script src="config.js"></script>
-  <script src="app.js?v=4.0.2"></script>
+  <script src="app.js?v=4.0.4"></script>
 </body>
 
 </html>

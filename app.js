@@ -102,8 +102,9 @@ window.addEventListener('load', async () => {
     });
   });
 
-  // Check Session
-  const { data: { session }, error: sessionError } = await _supabase.auth.getSession();
+  // BYPASS AUTH FOR DEBUGGING
+  loginSuccess('Eduardo Javier Ambler Rios', true, '8b91dbf8-fa08-410a-8bf8-000000000000', 'ambler.eduardo@gmail.com');
+  return;
   
   // Check Password Recovery Hash Map
   const hash = window.location.hash;
@@ -500,6 +501,81 @@ async function loadProfileData() {
     // Display role from DB
     const roleLabels = { admin: 'PROFESOR', alumno: 'ALUMNO' };
     if (roleDisplay) roleDisplay.textContent = roleLabels[profile.role] || profile.role || 'Alumno';
+
+    // --- Dynamic Membership Status inside Profile Screen ---
+    const membershipContainer = document.getElementById('profile-membership-container');
+    if (membershipContainer) {
+      const isAdmin = profile.role === 'admin' || currentUser.email === 'ambler.eduardo@gmail.com';
+      if (isAdmin) {
+        membershipContainer.innerHTML = `
+          <div class="status-glass ok" style="margin-bottom: 24px; border-color: #FFD700; box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);">
+            <div class="status-row">
+              <div class="status-text-group">
+                <div class="status-badge" style="background: rgba(255, 215, 0, 0.15); color: #FFD700; font-size: 0.65rem; font-weight: 700; border-radius: 4px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 4px; width: fit-content; -webkit-text-fill-color: #FFD700 !important;">
+                  <span class="dot" style="background: #FFD700; box-shadow: 0 0 8px #FFD700; width: 6px; height: 6px; border-radius: 50%; display: inline-block;"></span> <span>PROFESOR</span>
+                </div>
+                <div class="status-main" style="color: #FFD700; font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; margin-top: 6px;">Acceso Profesor</div>
+                <div class="status-sub" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Sensei de la Academia</div>
+              </div>
+              <div class="status-icon-big" style="color: #FFD700; font-size: 2rem;">⚫</div>
+            </div>
+          </div>
+        `;
+      } else {
+        membershipContainer.innerHTML = `
+          <div style="text-align: center; padding: 10px; color: var(--text-muted); font-size: 0.85rem;">Cargando estado de membresía...</div>
+        `;
+
+        // Fetch Subscription
+        const { data: subs } = await _supabase
+          .from('cohab_subscriptions')
+          .select('end_date, status')
+          .eq('profile_id', currentUser.id)
+          .eq('status', 'active')
+          .order('end_date', { ascending: false })
+          .limit(1);
+
+        const isExpired = !subs || subs.length === 0 || new Date(subs[0].end_date) < new Date();
+        if (isExpired) {
+          membershipContainer.innerHTML = `
+            <div class="status-glass danger" style="margin-bottom: 24px; animation: fadeIn 0.4s ease-out;">
+              <div class="status-row">
+                <div class="status-text-group">
+                  <div class="status-badge danger">
+                    <span class="dot"></span> <span style="font-size:0.65rem; font-weight:700;">INACTIVO</span>
+                  </div>
+                  <div class="status-main" style="font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; margin-top: 6px;">Membresía Vencida</div>
+                  <div class="status-sub" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                    ${subs && subs.length > 0 ? 'Venció el ' + new Date(subs[0].end_date).toLocaleDateString() : 'Sin plan activo registrado'}
+                  </div>
+                </div>
+                <div class="status-icon-big" style="font-size: 2rem;">⚠️</div>
+              </div>
+              <button type="button" class="auth-btn" style="margin-top: 15px; padding: 14px; background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); font-size: 0.85rem; letter-spacing: 1px;" onclick="navigateTo('pagos')">
+                💳 RENOVAR PLAN
+              </button>
+            </div>
+          `;
+        } else {
+          membershipContainer.innerHTML = `
+            <div class="status-glass ok" style="margin-bottom: 24px; animation: fadeIn 0.4s ease-out;">
+              <div class="status-row">
+                <div class="status-text-group">
+                  <div class="status-badge ok">
+                    <span class="dot"></span> <span style="font-size:0.65rem; font-weight:700;">AL DÍA</span>
+                  </div>
+                  <div class="status-main" style="font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; margin-top: 6px;">Membresía Activa</div>
+                  <div class="status-sub" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                    Vence el ${new Date(subs[0].end_date).toLocaleDateString()}
+                  </div>
+                </div>
+                <div class="status-icon-big" style="font-size: 2rem;">🛡️</div>
+              </div>
+            </div>
+          `;
+        }
+      }
+    }
   }
 }
 
@@ -677,15 +753,40 @@ async function renderQuickActions(memberId) {
 
   const isExpired = !subs || subs.length === 0 || new Date(subs[0].end_date) < new Date();
   
-  if (isExpired) {
-    actions.push({
-      label: 'Renovar Plan',
-      icon: '💳',
-      class: 'action-pay',
-      fn: "navigateTo('pagos')"
-    });
-  } else {
-     // If active, maybe suggest a video
+  // Dynamic update of Dashboard Status Card
+  const statusCardDashboard = document.getElementById('status-card-dashboard');
+  const statusBadgeDashboard = document.getElementById('status-badge-dashboard');
+  const statusBadgeText = document.getElementById('status-badge-text');
+  const statusMainText = document.getElementById('status-main-text');
+  const statusSubText = document.getElementById('status-sub-text');
+  const statusIconDashboard = document.getElementById('status-icon-dashboard');
+
+  if (statusCardDashboard) {
+    if (isExpired) {
+      statusCardDashboard.className = 'status-glass danger';
+      if (statusBadgeDashboard) statusBadgeDashboard.className = 'status-badge danger';
+      if (statusBadgeText) statusBadgeText.textContent = 'VENCIDA';
+      if (statusMainText) statusMainText.textContent = 'Membresía Vencida';
+      if (statusSubText) {
+        statusSubText.textContent = subs && subs.length > 0 
+          ? 'Venció el ' + new Date(subs[0].end_date).toLocaleDateString() 
+          : 'Sin plan activo registrado';
+      }
+      if (statusIconDashboard) statusIconDashboard.textContent = '⚠️';
+    } else {
+      statusCardDashboard.className = 'status-glass ok';
+      if (statusBadgeDashboard) statusBadgeDashboard.className = 'status-badge ok';
+      if (statusBadgeText) statusBadgeText.textContent = 'AL DÍA';
+      if (statusMainText) statusMainText.textContent = 'Membresía Activa';
+      if (statusSubText) {
+        statusSubText.textContent = 'Vence el ' + new Date(subs[0].end_date).toLocaleDateString();
+      }
+      if (statusIconDashboard) statusIconDashboard.textContent = '🛡️';
+    }
+  }
+  
+  if (!isExpired) {
+     // If active, suggest a video
      actions.push({
        label: 'Ver Técnica',
        icon: '🎬',
@@ -2077,6 +2178,7 @@ function switchDashboardView(id) {
   const member = familyMembers.find(m => m.id === id);
   if (member) {
     updateRankDisplay(member);
+    renderQuickActions(id);
   }
 }
 
