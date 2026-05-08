@@ -78,13 +78,13 @@ body {
 
 .bg-panorama img {
   width: 100%;
-  height: 65%;
+  height: 100%; /* Spans the entire screen height so it sits perfectly behind the login card */
   object-fit: cover;
-  object-position: center top;
-  opacity: 0.75;
-  filter: saturate(1.2) contrast(1.1);
+  object-position: center center; /* Symmetrical centering */
+  opacity: 0.82; /* Brighter, more vivid stained glass display */
+  filter: saturate(1.25) contrast(1.12);
   mix-blend-mode: color-dodge;
-  transform: scale(1.25) translate(-3%, -3%); /* Strongly hides the X artifact at top right */
+  transform: scale(1.18); /* Hides edges beautifully */
 }
 
 /* Cover remaining artifacts in the top right just in case */
@@ -1312,15 +1312,15 @@ body {
 }
 
 .auth-glass {
-  background: rgba(10, 17, 40, 0.45); /* Elegant glass transparency */
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.18); /* Premium crisp white border edge */
+  background: rgba(6, 11, 24, 0.16); /* Extreme transparent glass, lets background colors and shapes shine through fully */
+  backdrop-filter: blur(8px); /* Lower blur so shapes/colors behind the card are perfectly recognizable and clear */
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25); /* Ultra crisp glass reflection edge */
   border-radius: var(--radius-lg);
   padding: 36px 28px;
   width: 100%;
   max-width: 400px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1); /* Stunning subtle inner glow */
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2); /* Deep shadows for floating effect */
 }
 
 .auth-title {
@@ -1333,10 +1333,10 @@ body {
 
 .auth-subtitle {
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.75); /* Highly readable subtitle */
+  color: rgba(255, 255, 255, 0.85); /* Fully white-leaning subtitle for high contrast */
   margin-bottom: 30px;
   font-weight: 500;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .form-group {
@@ -1350,16 +1350,16 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: rgba(255, 255, 255, 0.9); /* Premium highly visible label on transparent bg */
+  color: rgba(255, 255, 255, 0.95); /* Extremely bright label for perfect readability */
   margin-bottom: 8px;
   padding-left: 2px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .form-input {
   width: 100%;
-  background: rgba(6, 11, 24, 0.7); /* Deep solid input bg for extreme text contrast on transparent forms */
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(6, 11, 24, 0.35); /* Elegant translucent input background */
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--radius-md);
   padding: 16px;
   color: white;
@@ -1369,14 +1369,14 @@ body {
 }
 
 .form-input::placeholder {
-  color: rgba(255, 255, 255, 0.5); /* Optimally brightened placeholder */
+  color: rgba(255, 255, 255, 0.55); /* Readable placeholder */
 }
 
 .form-input:focus {
   outline: none;
-  background: rgba(0, 180, 216, 0.12); /* Extremely rich focus color */
+  background: rgba(0, 180, 216, 0.15); /* Vivid focus */
   border-color: var(--crimson);
-  box-shadow: 0 0 20px rgba(0, 180, 216, 0.25);
+  box-shadow: 0 0 20px rgba(0, 180, 216, 0.3);
 }
 
 .auth-btn {
