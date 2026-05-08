@@ -1304,17 +1304,17 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px; /* Reduced margin */
 }
 
 .auth-card-logo {
-  width: 90px;
-  height: 90px;
+  width: 70px; /* Minimalist size */
+  height: 70px; /* Minimalist size */
   border-radius: 50%;
   background: white;
-  padding: 3px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 10px rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   object-fit: contain;
   transition: transform 0.3s var(--ease-out);
 }
@@ -1324,22 +1324,22 @@ body {
 }
 
 .auth-glass {
-  background: rgba(6, 11, 24, 0.16); /* Extreme transparent glass, lets background colors and shapes shine through fully */
-  backdrop-filter: blur(8px); /* Lower blur so shapes/colors behind the card are perfectly recognizable and clear */
+  background: rgba(6, 11, 24, 0.16);
+  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.25); /* Ultra crisp glass reflection edge */
-  border-radius: var(--radius-lg);
-  padding: 36px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-md); /* Sleeker border radius */
+  padding: 24px 20px; /* Highly compact padding */
   width: 100%;
-  max-width: 400px;
-  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2); /* Deep shadows for floating effect */
+  max-width: 350px; /* Narrower width for elegant mobile display */
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .auth-title {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.35rem; /* Sleeker, smaller elegant text size */
-  margin-top: 14px;
+  font-size: 1.15rem; /* Highly elegant and compact text size */
+  margin-top: 10px; /* Reduced space */
   margin-bottom: 0px;
   letter-spacing: -0.3px;
   color: white;
@@ -1348,55 +1348,55 @@ body {
 
 .form-group {
   text-align: left;
-  margin-bottom: 20px;
+  margin-bottom: 14px; /* Reduced vertical gap */
 }
 
 .form-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.7rem; /* Crisper label text */
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: rgba(255, 255, 255, 0.95); /* Extremely bright label for perfect readability */
-  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 6px; /* Smaller space */
   padding-left: 2px;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .form-input {
   width: 100%;
-  background: rgba(6, 11, 24, 0.35); /* Elegant translucent input background */
+  background: rgba(6, 11, 24, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--radius-md);
-  padding: 16px;
+  border-radius: var(--radius-sm); /* Sleeker input corners */
+  padding: 12px 14px; /* More compact padding */
   color: white;
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: 0.95rem; /* Slightly smaller input text */
   transition: all 0.3s var(--ease-out);
 }
 
 .form-input::placeholder {
-  color: rgba(255, 255, 255, 0.55); /* Readable placeholder */
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .form-input:focus {
   outline: none;
-  background: rgba(0, 180, 216, 0.15); /* Vivid focus */
+  background: rgba(0, 180, 216, 0.15);
   border-color: var(--crimson);
   box-shadow: 0 0 20px rgba(0, 180, 216, 0.3);
 }
 
 .auth-btn {
   width: 100%;
-  padding: 18px;
-  margin-top: 10px;
+  padding: 14px; /* Highly responsive, comfortable size */
+  margin-top: 6px;
   background: linear-gradient(135deg, var(--crimson-deep), var(--crimson));
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm); /* Sleeker button corners */
   color: white;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1rem;
+  font-size: 0.95rem;
   text-transform: uppercase;
   letter-spacing: 2px;
   cursor: pointer;
