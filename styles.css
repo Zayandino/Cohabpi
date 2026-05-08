@@ -1299,16 +1299,28 @@ body {
   z-index: 20;
 }
 
-.auth-logo {
-  width: 120px;
-  height: 120px;
+.auth-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.auth-card-logo {
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
   background: white;
-  padding: 4px;
-  margin-bottom: 24px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 3px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   object-fit: contain;
+  transition: transform 0.3s var(--ease-out);
+}
+
+.auth-card-logo:hover {
+  transform: scale(1.05);
 }
 
 .auth-glass {
@@ -1325,18 +1337,13 @@ body {
 
 .auth-title {
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.85rem;
-  margin-bottom: 8px;
-  letter-spacing: -0.5px;
-}
-
-.auth-subtitle {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.85); /* Fully white-leaning subtitle for high contrast */
-  margin-bottom: 30px;
-  font-weight: 500;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  font-weight: 700;
+  font-size: 1.35rem; /* Sleeker, smaller elegant text size */
+  margin-top: 14px;
+  margin-bottom: 0px;
+  letter-spacing: -0.3px;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .form-group {

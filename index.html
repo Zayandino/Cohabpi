@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cohab Los Andes</title>
-  <link rel="stylesheet" href="styles.css?v=4.0.7">
+  <link rel="stylesheet" href="styles.css?v=4.0.8">
 
   <!-- SDKs -->
   <script src="https://sdk.mercadopago.com/js/v2"></script>
@@ -36,10 +36,11 @@
 
     <!-- ===== SCREEN 0: LOGIN / AUTH ===== -->
     <section id="screen-auth" class="screen-auth">
-      <img src="assets/logo-original.jpg" alt="Cohab Logo" class="auth-logo">
       <div class="auth-glass">
-        <h1 class="auth-title">Acceso Alumnos</h1>
-        <p class="auth-subtitle">Portal oficial Cohab Los Andes</p>
+        <div class="auth-header">
+          <img src="assets/logo-original.jpg" alt="Cohab Logo" class="auth-card-logo">
+          <h1 class="auth-title">Acceso Alumnos</h1>
+        </div>
 
         <form id="auth-form" onsubmit="handleAuth(event)">
           <div class="form-group">
