@@ -2256,38 +2256,11 @@ async function fetchAllStudents() {
       if (studentError) throw studentError;
 
       if (!students || students.length === 0) {
+        adminStudentsData = [];
         studentList.innerHTML = '<p class="empty-state">No hay alumnos registrados.</p>';
       } else {
-        const beltLabels = {
-          'white': '⚪ Blanco',
-          'blue': '🔵 Azul',
-          'purple': '🟣 Morado',
-          'brown': '🟤 Marrón',
-          'black': '⚫ Negro',
-          'No Belt': '🥋 Sin Cinturón'
-        };
-
-        studentList.innerHTML = students.map(st => {
-          const selectOptions = Object.entries(beltLabels).map(([key, label]) => {
-            return `<option value="${key}" ${st.belt === key ? 'selected' : ''}>${label}</option>`;
-          }).join('');
-
-          return `
-            <div class="service-card-full" style="padding: 15px; margin-bottom: 10px; border-left: 3px solid var(--aurora); width: 100%; box-sizing: border-box; display: block; background: var(--bg-glass);">
-              <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:10px; flex-wrap:wrap;">
-                <div>
-                  <h4 style="color:var(--text-white); margin:0 0 5px 0; font-size:1.05rem;">${st.name || 'Sin Nombre'}</h4>
-                  <span style="font-size:0.8rem; color:var(--text-muted);">${st.email || 'Sin correo'}</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <select onchange="updateStudentBelt('${st.id}', this.value)" style="background:var(--bg-deep); color:var(--text-white); border:1px solid rgba(255,255,255,0.1); padding:6px 12px; border-radius:6px; font-size:0.85rem; cursor:pointer;">
-                    ${selectOptions}
-                  </select>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
+        adminStudentsData = students;
+        filterAdminStudents();
       }
     }
 
@@ -2942,5 +2915,144 @@ async function renderClubFamilyGroups() {
   } catch (error) {
     console.error('Error rendering club family groups:', error);
     container.innerHTML = '<p class="empty-state" style="color:var(--crimson-bright); text-align:center;">❌ Error al cargar los grupos familiares de la academia.</p>';
+  }
+}
+
+﻿let adminStudentsData = [];
+let currentAdminStudent = null;
+
+async function filterAdminStudents() {
+  const query = document.getElementById("admin-student-search").value.toLowerCase();
+  const list = document.getElementById("admin-student-list");
+  if (!list) return;
+  
+  if (adminStudentsData.length === 0) {
+    list.innerHTML = "<p class=\"empty-state\">No hay alumnos registrados.</p>";
+    return;
+  }
+
+  const filtered = adminStudentsData.filter(st => {
+    const name = st.name ? st.name.toLowerCase() : "";
+    const email = st.email ? st.email.toLowerCase() : "";
+    return name.includes(query) || email.includes(query);
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = "<p class=\"empty-state\">No se encontraron alumnos.</p>";
+    return;
+  }
+
+  const beltLabels = {
+    "white": "⚪ Blanco",
+    "blue": "🔵 Azul",
+    "purple": "🟣 Morado",
+    "brown": "🟤 Marrón",
+    "black": "⚫ Negro",
+    "No Belt": "🥋 Sin Cinturón"
+  };
+
+  list.innerHTML = filtered.map(st => {
+    const beltLabel = beltLabels[st.belt] || "🥋 Sin Cinturón";
+    const grausLabel = st.graus ? ' - ' + st.graus + ' Graus' : "";
+    return '<div class="admin-student-card" onclick="openStudentModal(\'' + st.id + '\')">' +
+           '<div class="admin-student-card-info">' +
+           '<h4>' + (st.name || "Sin Nombre") + '</h4>' +
+           '<span>' + (st.email || "Sin correo") + '</span>' +
+           '</div>' +
+           '<div class="admin-student-card-badge">' +
+           beltLabel + grausLabel +
+           '</div></div>';
+  }).join("");
+}
+
+function openStudentModal(id) {
+  const student = adminStudentsData.find(s => s.id === id);
+  if (!student) return;
+  currentAdminStudent = student;
+
+  document.getElementById("student-modal-name").textContent = student.name || "Sin Nombre";
+  document.getElementById("student-modal-email").textContent = student.email || "Sin correo";
+  
+  const toggle = document.getElementById("student-modal-grades-toggle");
+  const beltSelect = document.getElementById("student-modal-belt");
+  const grausInput = document.getElementById("student-modal-graus");
+
+  if (student.belt && student.belt !== "No Belt" && student.belt !== "") {
+    toggle.checked = true;
+    beltSelect.value = student.belt;
+    grausInput.value = student.graus || 0;
+  } else {
+    toggle.checked = false;
+    beltSelect.value = "white";
+    grausInput.value = 0;
+  }
+  
+  toggleGradesSection();
+  document.getElementById("student-mgmt-modal").style.display = "flex";
+}
+
+function closeStudentModal() {
+  document.getElementById("student-mgmt-modal").style.display = "none";
+  currentAdminStudent = null;
+}
+
+function toggleGradesSection() {
+  const isChecked = document.getElementById("student-modal-grades-toggle").checked;
+  const section = document.getElementById("student-modal-grades-section");
+  if (isChecked) {
+    section.style.display = "block";
+  } else {
+    section.style.display = "none";
+  }
+}
+
+async function saveStudentGrades() {
+  if (!currentAdminStudent) return;
+  const isChecked = document.getElementById("student-modal-grades-toggle").checked;
+  
+  let newBelt = "No Belt";
+  let newGraus = 0;
+
+  if (isChecked) {
+    newBelt = document.getElementById("student-modal-belt").value;
+    newGraus = parseInt(document.getElementById("student-modal-graus").value) || 0;
+  }
+
+  try {
+    showToast("Guardando...");
+    const { error } = await _supabase
+      .from("cohab_profiles")
+      .update({ belt: newBelt, graus: newGraus })
+      .eq("id", currentAdminStudent.id);
+
+    if (error) throw error;
+    showToast("✅ Grados guardados con éxito");
+    closeStudentModal();
+    fetchAllStudents();
+  } catch (error) {
+    console.error("Error updating grades:", error);
+    showToast("❌ Error al guardar grados");
+  }
+}
+
+async function deleteStudentProfile() {
+  if (!currentAdminStudent) return;
+  if (!confirm('¿Estás seguro de que deseas ELIMINAR permanentemente a ' + currentAdminStudent.name + '? Esta acción no se puede deshacer.')) return;
+
+  try {
+    showToast("Eliminando...");
+    const { error } = await _supabase
+      .from("cohab_profiles")
+      .delete()
+      .eq("id", currentAdminStudent.id);
+
+    if (error) throw error;
+    showToast("✅ Alumno eliminado");
+    closeStudentModal();
+    fetchAllStudents();
+    updateAdminMetrics();
+  } catch (error) {
+    console.error("Error deleting student:", error);
+    showToast("❌ Error al eliminar alumno");
   }
 }

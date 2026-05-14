@@ -563,9 +563,10 @@
           <div id="admin-tab-graduaciones" class="admin-tab-content active">
             <!-- Section 1: Graduaciones -->
             <div class="admin-form-glass" style="margin-top: 0;">
-              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--crimson-bright);">
-                🥋 Centro de Graduaciones
+              <h3 style="font-family:var(--font-display); font-size:1.1rem; margin-bottom:16px; color: var(--aurora);">
+                📖 Directorio de Alumnos
               </h3>
+              <input type="text" id="admin-student-search" class="admin-search-bar" placeholder="Buscar por nombre o correo..." oninput="filterAdminStudents()">
               <div id="admin-student-list" class="admin-student-grid">
                 <div class="loading-spinner">Cargando alumnos...</div>
               </div>
@@ -1049,6 +1050,54 @@
       </div>
 
       <button class="auth-btn" id="btn-save-new-password" onclick="saveNewPassword()" style="margin-top: 10px;">Guardar Contraseña</button>
+    </div>
+  </div>
+
+  <!-- Modal de Gestión de Alumno -->
+  <div class="modal-overlay" id="student-mgmt-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(8px); z-index:999; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="modal-content" style="background:var(--bg-glass-strong); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-glass); width:90%; max-width:400px; max-height: 90vh; overflow-y: auto;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h3 style="font-family:var(--font-display); font-size: 1.3rem; margin:0; color: var(--text-white);" id="student-modal-name">Nombre Alumno</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin:4px 0 0 0;" id="student-modal-email">correo@ejemplo.com</p>
+        </div>
+        <button class="close-modal" onclick="closeStudentModal()" style="background:none; border:none; color:var(--text-light); font-size:1.5rem; cursor:pointer;">×</button>
+      </div>
+      
+      <!-- Toggle Funcional / BJJ -->
+      <div style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <h4 style="margin:0; font-size:0.9rem; color:var(--text-white);">Sistema de Grados</h4>
+          <p style="margin:2px 0 0 0; font-size:0.75rem; color:var(--text-muted);">Activar si es BJJ (Desactivar para Funcional)</p>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="student-modal-grades-toggle" onchange="toggleGradesSection()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div id="student-modal-grades-section" style="display: none; padding:12px; background:rgba(0,0,0,0.2); border-radius:8px; border:1px solid rgba(255,255,255,0.05); margin-bottom:20px;">
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label" style="text-align:left; display:block; margin-bottom:6px;">Cinturón</label>
+          <select id="student-modal-belt" class="form-input" style="padding:10px; cursor:pointer;">
+            <option value="white">⚪ Blanco</option>
+            <option value="blue">🔵 Azul</option>
+            <option value="purple">🟣 Morado</option>
+            <option value="brown">🟤 Marrón</option>
+            <option value="black">⚫ Negro</option>
+            <option value="No Belt">🥋 Sin Cinturón</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" style="text-align:left; display:block; margin-bottom:6px;">Graus (Rayas)</label>
+          <input type="number" id="student-modal-graus" class="form-input" min="0" max="4" style="padding:10px;">
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top: 20px;">
+        <button class="auth-btn" onclick="saveStudentGrades()" style="background: linear-gradient(135deg, var(--aurora), #5B4FCF); border:none; margin:0;">Guardar Cambios</button>
+        <button class="auth-btn" onclick="deleteStudentProfile()" style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); color:#EF4444; margin:0;">Eliminar Alumno</button>
+      </div>
     </div>
   </div>
 
