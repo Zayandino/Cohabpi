@@ -35,7 +35,7 @@
   <div class="app">
 
     <!-- ===== SCREEN 0: LOGIN / AUTH ===== -->
-    <section id="screen-auth" class="screen-auth">
+    <section id="screen-auth" class="screen-auth" style="display:none !important;">
       <div class="auth-glass">
         <div class="auth-header">
           <img src="assets/logo-original.jpg" alt="Cohab Logo" class="auth-card-logo">
@@ -66,10 +66,10 @@
     </section>
 
     <!-- Main App Content (Hidden until login) -->
-    <div id="app-main-content">
+    <div id="app-main-content" style="display:block !important;">
 
       <!-- ===== SCREEN 1: DASHBOARD ===== -->
-      <section id="screen-dashboard" class="screen active">
+      <section id="screen-dashboard" class="screen">
 
         <!-- Hero Header -->
         <header class="hero">
@@ -295,10 +295,6 @@
                   <input type="text" id="new-member-name" class="auth-input" placeholder="Nombre de tu familiar" autocomplete="off">
                 </div>
                 <div class="admin-input-group" style="margin-bottom: 16px;">
-                  <label>RUT (Solo números y K)</label>
-                  <input type="text" id="new-member-rut" class="auth-input" placeholder="12345678-9" autocomplete="off">
-                </div>
-                <div class="admin-input-group" style="margin-bottom: 16px;">
                   <label>Fecha de Nacimiento</label>
                   <input type="date" id="new-member-dob" class="auth-input" onchange="checkMemberAge()">
                 </div>
@@ -399,7 +395,7 @@
       </section>
 
       <!-- ===== SCREEN: ONBOARDING ===== -->
-      <section id="screen-onboarding" class="screen">
+      <section id="screen-onboarding" class="screen active">
         <div class="content" style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:90vh; text-align:center; padding: 20px;">
           <img src="assets/logo-original.jpg" alt="Cohab Logo" style="width: 100px; border-radius: 50%; border: 2px solid var(--border-glass); margin-bottom: 24px;">
           <h2 style="font-family:var(--font-display); font-size:1.8rem; color:var(--text-white); margin-bottom:12px;">¡Bienvenido a Cohab!</h2>

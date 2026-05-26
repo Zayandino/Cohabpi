@@ -383,7 +383,8 @@ async function loginSuccess(name, isAdmin, userId, email) {
     }
   }
   if (statusCard) statusCard.style.display = isAdmin ? 'none' : 'block';
-  if (navPagos) navPagos.style.display = isAdmin ? 'none' : 'flex';
+  // Mantener la pestaña de beneficios visible siempre para asegurar la simetría visual y el logo en el centro
+  if (navPagos) navPagos.style.display = 'flex';
   
   // Mostrar Panel Admin dentro del Perfil solo a Admins
   const adminPanelContainer = document.getElementById('admin-panel-container');
@@ -421,18 +422,17 @@ async function loginSuccess(name, isAdmin, userId, email) {
 
 async function submitOnboarding() {
   const phone = document.getElementById('onboarding-phone').value;
-  const emergency = document.getElementById('onboarding-emergency').value;
-  const waiver = document.getElementById('onboarding-waiver').checked;
+  const emergencyName = document.getElementById('onboarding-emergency-name').value;
+  const emergencyPhone = document.getElementById('onboarding-emergency-phone').value;
+  const rut = document.getElementById('onboarding-rut').value;
+  const dob = document.getElementById('onboarding-dob').value;
 
-  if (!phone || !emergency) {
-    showToast('⚠️ Por favor completa todos tus datos');
+  if (!phone || !rut || !dob || !emergencyName || !emergencyPhone) {
+    showToast('⚠️ Por favor completa todos los campos (Teléfono, Contacto, RUT, Fecha)');
     return;
   }
-  
-  if (!waiver) {
-    showToast('⚠️ Debes aceptar el acuerdo de riesgos');
-    return;
-  }
+
+  const fullEmergency = `${emergencyName} (${emergencyPhone})`;
 
   showToast('Guardando tu perfil...');
 
@@ -441,7 +441,10 @@ async function submitOnboarding() {
     .update({ 
       phone: phone, 
       emergency_contact: emergency,
-      waiver_signed: true 
+      rut: rut,
+      birthdate: dob,
+      role: 'miembro', // Ingresa como miembro base
+      waiver_signed: true // Passthrough para saltar el bloqueo de app.js
     })
     .eq('id', currentUser.id);
 
@@ -1074,12 +1077,54 @@ function closeAddMemberModal() {
   document.getElementById('add-member-modal').style.display = 'none';
 }
 
+function checkMemberAge() {
+  const dobInput = document.getElementById('new-member-dob').value;
+  const healthSection = document.getElementById('member-health-section');
+  const healthLink = document.getElementById('member-health-link');
+  
+  if (!dobInput) {
+    healthSection.style.display = 'none';
+    return;
+  }
+
+  const dob = new Date(dobInput);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+
+  healthSection.style.display = 'block';
+
+  if (age < 18) {
+    healthLink.href = "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform";
+    healthLink.innerHTML = "🏥 Llenar Ficha de Salud (Menores)";
+  } else {
+    healthLink.href = "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1";
+    healthLink.innerHTML = "🏥 Llenar Ficha de Salud (Adultos)";
+  }
+}
+
 async function confirmAddMember() {
   const input = document.getElementById('new-member-name');
+  const rutInput = document.getElementById('new-member-rut');
+  const dobInput = document.getElementById('new-member-dob').value;
   const name = input ? input.value.trim() : '';
+  const rut = rutInput ? rutInput.value.trim() : '';
+  const healthChecked = document.getElementById('member-health-check').checked;
+  const waiverChecked = document.getElementById('member-waiver-check').checked;
   
-  if (!name) {
-    showToast('⚠️ Ingresa un nombre válido');
+  if (!name || !rut) {
+    showToast('⚠️ Ingresa nombre y RUT válidos');
+    return;
+  }
+  if (!dobInput) {
+    showToast('⚠️ Ingresa la fecha de nacimiento');
+    return;
+  }
+  if (!healthChecked || !waiverChecked) {
+    showToast('⚠️ Debes completar y aceptar los requisitos obligatorios');
     return;
   }
 
@@ -1101,9 +1146,12 @@ async function confirmAddMember() {
         relationship: 'Familiar',
         email: myProfile?.email || null,
         phone: myProfile?.phone || null,
+        rut: rut,
+        birthdate: dobInput,
         role: 'alumno',
         belt: 'white',
-        status: 'activo'
+        status: 'activo',
+        waiver_signed: true
       }
     ])
     .select();
@@ -3056,3 +3104,6 @@ async function deleteStudentProfile() {
     showToast("❌ Error al eliminar alumno");
   }
 }
+
+
+

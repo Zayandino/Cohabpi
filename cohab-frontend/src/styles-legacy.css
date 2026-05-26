@@ -1379,6 +1379,15 @@ body {
   transition: all 0.3s var(--ease-out);
 }
 
+select.form-input, select.auth-input, select {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  height: 42px !important;
+  font-size: 0.88rem !important;
+  color: white !important;
+  background-color: rgba(6, 11, 24, 0.85) !important;
+}
+
 .form-input::placeholder, .auth-input::placeholder {
   color: rgba(255, 255, 255, 0.55);
 }
@@ -1453,10 +1462,6 @@ body {
 
 /* Hidden by default until login */
 #app-main-content {
-  display: none;
-}
-
-#bottom-nav {
   display: none;
 }
 
