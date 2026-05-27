@@ -41,7 +41,9 @@ function App() {
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/videos" element={<ProtectedRoute><VideoLibrary /></ProtectedRoute>} />
             <Route path="/novedades" element={<ProtectedRoute><Novedades /></ProtectedRoute>} />
-            <Route path="/pagos" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
+            <Route path="/beneficios" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
+            {/* Redirect de ruta legacy /pagos a /beneficios */}
+            <Route path="/pagos" element={<Navigate to="/beneficios" replace />} />
 
             {/* Admin Routes */}
             <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />

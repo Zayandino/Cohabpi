@@ -20,19 +20,23 @@ export default function Payments() {
           .select('*')
           .order('id', { ascending: true });
           
-        if (error) throw error;
+        if (error) {
+          // Error visible para diagnóstico (RLS, permisos, etc.)
+          console.error('fetchDiscounts error — código:', error?.code, '| mensaje:', error?.message, '| hint:', error?.hint);
+          throw error;
+        }
+        console.log('fetchDiscounts — registros desde DB:', data?.length, data);
         setDiscounts(data || []);
       } catch (err) {
-        console.warn("No se pudieron cargar descuentos adicionales de Supabase:", err);
+        console.error('Error al cargar convenios dinámicos:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    if (profile?.id) {
-      fetchDiscounts();
-    }
-  }, [profile]);
+    // Cargar al montar (no esperar profile para no retrasar la carga)
+    fetchDiscounts();
+  }, []);
 
   return (
     <div>

@@ -55,7 +55,7 @@ export default function VideoLibrary() {
               <button 
                 className="auth-btn" 
                 style={{ background: 'linear-gradient(135deg, var(--crimson-deep), var(--crimson))' }} 
-                onClick={() => navigate('/pagos')}
+                onClick={() => navigate('/beneficios')}
               >
                 Renovar Plan
               </button>
