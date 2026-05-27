@@ -124,7 +124,7 @@ export default function Payments() {
                 alignItems: 'center',
                 borderRadius: '12px'
               }}>
-                <span style={{ fontSize: '2.2rem' }}>{disc.emoji || '🎁'}</span>
+                <span style={{ fontSize: '2.2rem' }}>{disc.code || disc.emoji || '🎁'}</span>
                 <div>
                   <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.92rem', fontWeight: 800 }}>{disc.title}</h4>
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.35 }}>{disc.description}</p>

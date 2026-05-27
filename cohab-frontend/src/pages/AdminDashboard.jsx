@@ -410,7 +410,7 @@ export default function AdminDashboard() {
         .insert([{
           title: benefitTitle.trim(),
           description: benefitDesc.trim(),
-          emoji: benefitEmoji
+          code: benefitEmoji
         }]);
 
       if (error) throw error;
@@ -1110,7 +1110,7 @@ export default function AdminDashboard() {
                   type="submit" 
                   disabled={publishingBenefit} 
                   className="auth-btn" 
-                  style={{ background: 'linear-gradient(135deg, #10B981, #00B4D8)', color: '#060B18', fontWeight: 900, height: '40px', marginTop: '5px' }}
+                  style={{ background: 'linear-gradient(135deg, #10B981, #00B4D8)', color: '#060B18', fontWeight: 900, minHeight: '40px', height: 'auto', padding: '10px 16px', marginTop: '5px' }}
                 >
                   {publishingBenefit ? 'Publicando...' : 'Agregar a Galería de Beneficios'}
                 </button>
@@ -1132,7 +1132,7 @@ export default function AdminDashboard() {
                   {benefits.map(item => (
                     <div key={item.id} className="glass-panel" style={{ padding: '12px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '1.6rem' }}>{item.emoji || '💎'}</span>
+                        <span style={{ fontSize: '1.6rem' }}>{item.code || item.emoji || '🎁'}</span>
                         <div>
                           <h4 style={{ color: 'white', margin: '0 0 2px 0', fontSize: '0.85rem', fontWeight: 800 }}>{item.title}</h4>
                           <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.3 }}>{item.description}</p>
