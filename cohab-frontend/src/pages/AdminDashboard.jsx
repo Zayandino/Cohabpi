@@ -392,7 +392,12 @@ export default function AdminDashboard() {
         .select('*')
         .order('title', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        // Log detallado para diagnosticar errores de RLS o permisos
+        console.error('fetchBenefits error — código:', error?.code, '| mensaje:', error?.message, '| hint:', error?.hint);
+        throw error;
+      }
+      console.log('fetchBenefits — registros obtenidos:', data?.length, data);
       setBenefits(data || []);
     } catch (err) {
       console.error("Error fetching benefits:", err);
@@ -415,7 +420,10 @@ export default function AdminDashboard() {
           code: benefitEmoji
         }]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('handlePublishBenefit error — código:', error?.code, '| mensaje:', error?.message, '| hint:', error?.hint);
+        throw error;
+      }
       
       setBenefitTitle('');
       setBenefitDesc('');
@@ -424,7 +432,8 @@ export default function AdminDashboard() {
       fetchBenefits();
     } catch (err) {
       console.error("Error publishing benefit:", err);
-      showToast("Error al guardar beneficio.", 'error');
+      const readableError = err?.message || err?.hint || 'Verifica que el usuario tiene role = admin.';
+      showToast(`Error al guardar beneficio: ${readableError}`, 'error');
     } finally {
       setPublishingBenefit(false);
     }
