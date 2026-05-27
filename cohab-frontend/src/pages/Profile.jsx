@@ -129,7 +129,7 @@ export default function Profile() {
       try {
         const { data, error } = await supabase
           .from('cohab_profiles')
-          .select('id, name, relationship, age, email, birthdate, scholarship_percent, waiver_signed')
+          .select('id, name, relationship, age, email, birthdate, scholarship_percent, waiver_signed, status')
           .eq('parent_id', profile.id);
 
         if (error) throw error;
@@ -207,7 +207,7 @@ export default function Profile() {
         // Initialize enrollments state safely
         const initial = {
           main: { 
-            enabled: true, 
+            enabled: profile?.status !== 'activo', 
             serviceId: getDefaultServiceForAge(profile?.age || 0, servicesData), 
             tierIdx: 0 
           }
@@ -1092,37 +1092,74 @@ export default function Profile() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '1.2rem' }}>🥋</span>
                           <div>
-                            <div style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{profile?.name || 'Tú (Titular)'}</div>
-                            <div style={{ color: 'var(--aurora)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>A mí mismo</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{profile?.name || 'Tú (Titular)'}</span>
+                              {profile?.status === 'activo' && (
+                                <span style={{ 
+                                  padding: '2px 8px', 
+                                  background: profile?.scholarship_percent === 100 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 180, 216, 0.12)', 
+                                  border: `1px solid ${profile?.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)'}`, 
+                                  color: profile?.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)', 
+                                  borderRadius: '12px', 
+                                  fontSize: '0.62rem', 
+                                  fontWeight: 900,
+                                  letterSpacing: '0.5px'
+                                }}>
+                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : (profile?.scholarship_percent > 0 ? `🎓 BECA ${profile.scholarship_percent}% ACTIVA` : 'BECA ACTIVA')}
+                                </span>
+                              )}
+                              {profile?.status !== 'activo' && profile?.scholarship_percent > 0 && (
+                                <span style={{ 
+                                  padding: '2px 8px', 
+                                  background: 'rgba(245, 158, 11, 0.12)', 
+                                  border: '1px solid #F59E0B', 
+                                  color: '#F59E0B', 
+                                  borderRadius: '12px', 
+                                  fontSize: '0.62rem', 
+                                  fontWeight: 900,
+                                  letterSpacing: '0.5px'
+                                }}>
+                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% PENDIENTE' : `🎓 BECA ${profile.scholarship_percent}% PENDIENTE`}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>A mí mismo</div>
                           </div>
                         </div>
-                        <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={enrollments.main?.enabled || false}
-                            onChange={() => handleToggleEnrollment('main')}
-                            style={{ display: 'none' }}
-                          />
-                          <div style={{
-                            width: '40px',
-                            height: '22px',
-                            borderRadius: '11px',
-                            background: enrollments.main?.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
-                            position: 'relative',
-                            transition: 'all 0.3s'
-                          }}>
-                            <div style={{
-                              width: '18px',
-                              height: '18px',
-                              borderRadius: '50%',
-                              background: '#060B18',
-                              position: 'absolute',
-                              top: '2px',
-                              left: enrollments.main?.enabled ? '20px' : '2px',
-                              transition: 'all 0.3s'
-                            }} />
+                        {profile?.status === 'activo' ? (
+                          <div style={{ color: '#10B981', fontWeight: 900, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.15)' }}>
+                            <span>AL DÍA</span>
+                            <span style={{ fontSize: '0.9rem' }}>✓</span>
                           </div>
-                        </label>
+                        ) : (
+                          <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={enrollments.main?.enabled || false}
+                              onChange={() => handleToggleEnrollment('main')}
+                              style={{ display: 'none' }}
+                            />
+                            <div style={{
+                              width: '40px',
+                              height: '22px',
+                              borderRadius: '11px',
+                              background: enrollments.main?.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
+                              position: 'relative',
+                              transition: 'all 0.3s'
+                            }}>
+                              <div style={{
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#060B18',
+                                position: 'absolute',
+                                top: '2px',
+                                left: enrollments.main?.enabled ? '20px' : '2px',
+                                transition: 'all 0.3s'
+                              }} />
+                            </div>
+                          </label>
+                        )}
                       </div>
 
                       {enrollments.main?.enabled && (
@@ -1224,43 +1261,81 @@ export default function Profile() {
                     {/* Miembros Familiares */}
                     {family.map(m => {
                       const entry = enrollments[m.id] || { enabled: false, serviceId: services[0]?.id || '', tierIdx: 0 };
+                      const isMemberActive = m.status === 'activo';
                       return (
                         <div key={m.id} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '1.2rem' }}>🥋</span>
                               <div>
-                                <div style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{m.name}</div>
-                                <div style={{ color: '#10B981', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Familiar ({m.relationship})</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{m.name}</span>
+                                  {isMemberActive && (
+                                    <span style={{ 
+                                      padding: '2px 8px', 
+                                      background: m.scholarship_percent === 100 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 180, 216, 0.12)', 
+                                      border: `1px solid ${m.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)'}`, 
+                                      color: m.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)', 
+                                      borderRadius: '12px', 
+                                      fontSize: '0.62rem', 
+                                      fontWeight: 900,
+                                      letterSpacing: '0.5px'
+                                    }}>
+                                      {m.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : (m.scholarship_percent > 0 ? `🎓 BECA ${m.scholarship_percent}% ACTIVA` : 'BECA ACTIVA')}
+                                    </span>
+                                  )}
+                                  {!isMemberActive && m.scholarship_percent > 0 && (
+                                    <span style={{ 
+                                      padding: '2px 8px', 
+                                      background: 'rgba(245, 158, 11, 0.12)', 
+                                      border: '1px solid #F59E0B', 
+                                      color: '#F59E0B', 
+                                      borderRadius: '12px', 
+                                      fontSize: '0.62rem', 
+                                      fontWeight: 900,
+                                      letterSpacing: '0.5px'
+                                    }}>
+                                      {m.scholarship_percent === 100 ? '🎓 BECA 100% PENDIENTE' : `🎓 BECA ${m.scholarship_percent}% PENDIENTE`}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ color: '#10B981', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>Familiar ({m.relationship})</div>
                               </div>
                             </div>
-                            <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={entry.enabled}
-                                onChange={() => handleToggleEnrollment(m.id)}
-                                style={{ display: 'none' }}
-                              />
-                              <div style={{
-                                width: '40px',
-                                height: '22px',
-                                borderRadius: '11px',
-                                background: entry.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
-                                position: 'relative',
-                                transition: 'all 0.3s'
-                              }}>
-                                <div style={{
-                                  width: '18px',
-                                  height: '18px',
-                                  borderRadius: '50%',
-                                  background: '#060B18',
-                                  position: 'absolute',
-                                  top: '2px',
-                                  left: entry.enabled ? '20px' : '2px',
-                                  transition: 'all 0.3s'
-                                }} />
+                            {isMemberActive ? (
+                              <div style={{ color: '#10B981', fontWeight: 900, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.15)' }}>
+                                <span>AL DÍA</span>
+                                <span style={{ fontSize: '0.9rem' }}>✓</span>
                               </div>
-                            </label>
+                            ) : (
+                              <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={entry.enabled}
+                                  onChange={() => handleToggleEnrollment(m.id)}
+                                  style={{ display: 'none' }}
+                                />
+                                <div style={{
+                                  width: '40px',
+                                  height: '22px',
+                                  borderRadius: '11px',
+                                  background: entry.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
+                                  position: 'relative',
+                                  transition: 'all 0.3s'
+                                }}>
+                                  <div style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '50%',
+                                    background: '#060B18',
+                                    position: 'absolute',
+                                    top: '2px',
+                                    left: entry.enabled ? '20px' : '2px',
+                                    transition: 'all 0.3s'
+                                  }} />
+                                </div>
+                              </label>
+                            )}
                           </div>
 
                           {entry.enabled && (
@@ -1604,33 +1679,70 @@ export default function Profile() {
                           )}
                         </div>
                       ) : (
-                        <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                          <p style={{ color: '#FF6B6B', fontSize: '0.85rem', fontWeight: 700, margin: '0 0 10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                            ⚠️ Ningún miembro o titular habilitado para el pago
-                          </p>
-                          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.4, margin: '0 0 18px 0' }}>
-                            Para poder concretar tu pago, activa el interruptor al lado de tu nombre ("A mí mismo") o de tus familiares en la sección "1. Asignar Disciplinas".
-                          </p>
-                          <button
-                            disabled={true}
-                            className="auth-btn"
-                            style={{
-                              width: '100%',
-                              height: '46px',
-                              background: 'rgba(255,255,255,0.05)',
-                              border: '1px solid rgba(255,255,255,0.05)',
-                              color: 'var(--text-muted)',
-                              fontWeight: 900,
-                              fontSize: '0.9rem',
-                              letterSpacing: '1.5px',
-                              cursor: 'not-allowed',
-                              borderRadius: '8px',
-                              margin: 0
-                            }}
-                          >
-                            Selecciona un Miembro o a Ti Mismo
-                          </button>
-                        </div>
+                        (() => {
+                          const hasAnyActiveMember = profile?.status === 'activo' || family.some(m => m.status === 'activo');
+                          if (hasAnyActiveMember) {
+                            return (
+                              <div style={{ textAlign: 'center', padding: '20px 10px', background: 'rgba(16, 185, 129, 0.04)', border: '1px dashed rgba(16, 185, 129, 0.2)', borderRadius: '8px' }}>
+                                <span style={{ fontSize: '1.6rem' }}>🏆</span>
+                                <p style={{ color: '#10B981', fontSize: '0.85rem', fontWeight: 800, margin: '8px 0 4px 0' }}>
+                                  ¡Tu Grupo Familiar se Encuentra al Día!
+                                </p>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.4, margin: '0 0 16px 0' }}>
+                                  Todos los miembros seleccionados ya cuentan con sus planes o becas activas en la academia. No se requieren acciones de pago o activación adicionales por el momento.
+                                </p>
+                                <button
+                                  disabled={true}
+                                  className="auth-btn"
+                                  style={{
+                                    width: '100%',
+                                    height: '46px',
+                                    background: 'rgba(16, 185, 129, 0.05)',
+                                    border: '1px solid rgba(16, 185, 129, 0.15)',
+                                    color: '#10B981',
+                                    fontWeight: 900,
+                                    fontSize: '0.9rem',
+                                    letterSpacing: '1.5px',
+                                    cursor: 'not-allowed',
+                                    borderRadius: '8px',
+                                    margin: 0
+                                  }}
+                                >
+                                  MEMBRESÍAS AL DÍA ✅
+                                </button>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                              <p style={{ color: '#FF6B6B', fontSize: '0.85rem', fontWeight: 700, margin: '0 0 10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                ⚠️ Ningún miembro o titular habilitado para el pago
+                              </p>
+                              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.4, margin: '0 0 18px 0' }}>
+                                Para poder concretar tu pago, activa el interruptor al lado de tu nombre ("A mí mismo") o de tus familiares en la sección "1. Asignar Disciplinas".
+                              </p>
+                              <button
+                                disabled={true}
+                                className="auth-btn"
+                                style={{
+                                  width: '100%',
+                                  height: '46px',
+                                  background: 'rgba(255,255,255,0.05)',
+                                  border: '1px solid rgba(255,255,255,0.05)',
+                                  color: 'var(--text-muted)',
+                                  fontWeight: 900,
+                                  fontSize: '0.9rem',
+                                  letterSpacing: '1.5px',
+                                  cursor: 'not-allowed',
+                                  borderRadius: '8px',
+                                  margin: 0
+                                }}
+                              >
+                                Selecciona un Miembro o a Ti Mismo
+                              </button>
+                            </div>
+                          );
+                        })()
                       )}
                     </div>
                   );
