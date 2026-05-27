@@ -71,24 +71,37 @@ export default function VideoLibrary() {
           <p style={{ color: 'var(--text-muted)', padding: '0 18px' }}>Cargando videos...</p>
         ) : (
           <div className="thumb-grid">
-            {videos.map(video => (
-              <div key={video.id} className="thumb-card">
-                <div className="img-wrap">
-                  <img src={video.thumbnail_url || 'https://images.unsplash.com/photo-1599058917212-d750089bc07e?q=80&w=400'} alt={video.title} />
-                  <div className="thumb-play">
-                    <div className="thumb-play-icon">
-                      <svg viewBox="0 0 24 24">
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                      </svg>
+            {videos.map(video => {
+              const targetUrl = video.video_url || video.url;
+              const levelTag = video.description?.startsWith('Nivel: ') 
+                ? video.description.replace('Nivel: ', '') 
+                : (video.level || 'Todos');
+              const subtitle = `${levelTag} • ${video.instructor || 'Prof. Andrés'}`;
+
+              return (
+                <div 
+                  key={video.id} 
+                  className="thumb-card" 
+                  onClick={() => targetUrl && window.open(targetUrl, '_blank')}
+                  style={{ cursor: targetUrl ? 'pointer' : 'default' }}
+                >
+                  <div className="img-wrap">
+                    <img src={video.thumbnail_url || 'https://images.unsplash.com/photo-1599058917212-d750089bc07e?q=80&w=400'} alt={video.title} />
+                    <div className="thumb-play">
+                      <div className="thumb-play-icon">
+                        <svg viewBox="0 0 24 24">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
+                  <div className="thumb-text">
+                    {video.title}
+                    <div className="thumb-dur">{video.duration ? `${video.duration} • ` : ''}{subtitle}</div>
+                  </div>
                 </div>
-                <div className="thumb-text">
-                  {video.title}
-                  <div className="thumb-dur">{video.duration} • {video.instructor}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             
             {/* Fallback visual if no videos in DB */}
             {videos.length === 0 && (

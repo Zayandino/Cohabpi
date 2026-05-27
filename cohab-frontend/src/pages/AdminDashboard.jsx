@@ -332,12 +332,21 @@ export default function AdminDashboard() {
 
     try {
       setPublishingVideo(true);
+      
+      // Extraer miniatura si es un enlace de YouTube
+      const ytRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+      const match = videoUrl.match(ytRegExp);
+      const thumbnailUrl = match && match[2].length === 11 
+        ? `https://img.youtube.com/vi/${match[2]}/mqdefault.jpg` 
+        : null;
+
       const { error } = await supabase
         .from('cohab_videos')
         .insert([{
           title: videoTitle.trim(),
-          url: videoUrl.trim(),
-          level: videoLevel
+          video_url: videoUrl.trim(),
+          description: `Nivel: ${videoLevel}`,
+          thumbnail_url: thumbnailUrl
         }]);
 
       if (error) throw error;
@@ -1024,9 +1033,9 @@ export default function AdminDashboard() {
                           <h4 style={{ color: 'white', margin: '0 0 2px 0', fontSize: '0.85rem', fontWeight: 800 }}>{item.title}</h4>
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <span style={{ padding: '2px 6px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#F59E0B', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 800 }}>
-                              {item.level || 'Todos'}
+                              {item.description?.startsWith('Nivel: ') ? item.description.replace('Nivel: ', '') : (item.level || 'Todos')}
                             </span>
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{item.url}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{item.video_url || item.url}</span>
                           </div>
                         </div>
                       </div>
