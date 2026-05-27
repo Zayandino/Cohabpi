@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { LogOut, ArrowLeft, Plus, Calendar, Users, QrCode, Settings, Trash2, Edit2, CreditCard, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || (window.CONFIG && window.CONFIG.SUPABASE_URL) || 'https://api.cohablosandes.cloud';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || (window.CONFIG && window.CONFIG.SUPABASE_ANON_KEY) || '';
 const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false }
 });

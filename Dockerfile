@@ -26,8 +26,9 @@ FROM nginx:alpine
 RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy build output from Stage 1
+# Copy build output from Stage 1 and public config.js from root
 COPY --from=build /app/cohab-frontend/dist /usr/share/nginx/html
+COPY config.js /usr/share/nginx/html/
 
 # Expose port 80 and start Nginx
 EXPOSE 80
