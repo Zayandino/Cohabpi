@@ -7,3 +7,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NzQyMjA4NDksImV4cCI6MTg5MzQ1NjAwMCwicm9sZSI6ImFub24iLCJpc3MiOiJzdXBhYmFzZSJ9.OM8ePDG-yZwyT-vcGxB2ECMsHngThAEELd0tq7TY7eg',
   MERCADOPAGO_PUBLIC_KEY: 'TEST-84f3122d-260a-4583-8513-f4488efe6898',
 };
+
+if (typeof window !== 'undefined') {
+  window.CONFIG = CONFIG;
+}
