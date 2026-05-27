@@ -11,6 +11,9 @@ export default function Dashboard() {
   const [familyProfiles, setFamilyProfiles] = useState([]);
   // Selector de miembro: 'main' = titular, o el id de un familiar
   const [selectedMemberId, setSelectedMemberId] = useState('main');
+  // Servicios y suscripción activa del titular (para mostrar horario dinámico)
+  const [services, setServices] = useState([]);
+  const [selfActiveSub, setSelfActiveSub] = useState(null);
 
   // Retorna el perfil del miembro actualmente seleccionado
   const getSelectedProfile = useCallback(() => {
@@ -45,15 +48,17 @@ export default function Dashboard() {
       // 1. Consultar si el perfil logueado tiene suscripción activa propia
       const { data: subsData, error: subsError } = await supabase
         .from('cohab_subscriptions')
-        .select('id, end_date, status')
+        .select('id, end_date, status, service_id')
         .eq('profile_id', profile.id)
         .eq('status', 'active');
         
       if (subsError) throw subsError;
       
       const nowStr = new Date().toISOString().split('T')[0];
-      const isSelfActive = subsData && subsData.some(s => !s.end_date || s.end_date >= nowStr);
-      setHasActiveMembership(isSelfActive);
+      // Encontrar suscripción activa y guardar su service_id para el horario
+      const activeSelfSub = subsData?.find(s => !s.end_date || s.end_date >= nowStr) || null;
+      setHasActiveMembership(!!activeSelfSub);
+      setSelfActiveSub(activeSelfSub);
 
       // 2. Si el perfil logueado es titular (no tiene parent_id), cargar familiares
       if (!profile.parent_id) {
@@ -95,10 +100,24 @@ export default function Dashboard() {
     }
   };
 
+  // Carga los servicios activos desde Supabase para mostrar horarios dinámicos
+  const fetchServices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cohab_services')
+        .select('*');
+      if (error) throw error;
+      setServices(data || []);
+    } catch (err) {
+      console.error('Error al cargar servicios para horario:', err);
+    }
+  };
+
   useEffect(() => {
     if (profile?.id) {
       fetchAttendance(profile.id);
       checkMembershipAndFamily();
+      fetchServices();
     }
   }, [profile]);
 
@@ -148,6 +167,38 @@ export default function Dashboard() {
     }
   };
 
+
+  // Helper: parsea texto de días en array de claves ['LUN','MAR',...]
+  const parseDaysText = (daysText) => {
+    const text = (daysText || '').toLowerCase();
+    const selected = [];
+    if (text.includes('lunes a viernes') || text.includes('lun a vie')) return ['LUN','MAR','MIE','JUE','VIE'];
+    if (text.includes('lunes a sabado') || text.includes('lun a sab') || text.includes('lunes a sáb') || text.includes('lunes a sab')) return ['LUN','MAR','MIE','JUE','VIE','SAB'];
+    if (text.includes('lun') || text.includes('lunes')) selected.push('LUN');
+    if (text.includes('mar') || text.includes('martes')) selected.push('MAR');
+    if (text.includes('mie') || text.includes('mié') || text.includes('miercoles') || text.includes('miércoles')) selected.push('MIE');
+    if (text.includes('jue') || text.includes('juev') || text.includes('jueves')) selected.push('JUE');
+    if (text.includes('vie') || text.includes('viernes')) selected.push('VIE');
+    if (text.includes('sab') || text.includes('sáb') || text.includes('sabado') || text.includes('sábado')) selected.push('SAB');
+    if (text.includes('dom') || text.includes('domingo')) selected.push('DOM');
+    return selected;
+  };
+
+  // Helper: retorna los bloques de horario de un servicio que corren HOY
+  const getTodayBlocks = (serviceId) => {
+    if (!serviceId || !services.length) return [];
+    const service = services.find(s => s.id === serviceId);
+    if (!service?.schedule) return [];
+    const todayKey = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'][new Date().getDay()];
+    return service.schedule.split(' | ').reduce((acc, block) => {
+      const match = block.match(/^(.*?) de (\d{2}:\d{2}) a (\d{2}:\d{2}) hrs$/);
+      if (!match) return acc;
+      if (parseDaysText(match[1]).includes(todayKey)) {
+        acc.push({ start: match[2], end: match[3], serviceName: service.name });
+      }
+      return acc;
+    }, []);
+  };
 
   return (
     <section id="screen-dashboard" className="screen active" style={{ display: 'block' }}>
@@ -524,88 +575,62 @@ export default function Dashboard() {
             <div style={{ fontSize: '2rem' }}>📈</div>
           </div>
 
-          {/* Today Classes list */}
-          <div style={{ marginTop: '15px' }}>
-            <span className="metric-label" style={{ display: 'block', marginBottom: '10px', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.5px' }}>
-              Clases de Hoy (Horario Oficial)
-            </span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[
-                { id: 'bjj_am', name: 'BJJ Mediodía', time: '13:00', icon: '🥋' },
-                { id: 'bjj_pm', name: 'BJJ Noche', time: '20:00', icon: '🥋' },
-                { id: 'nogi', name: 'NoGi', time: '21:00', icon: '🤼' }
-              ].map(cls => {
-                // Verificar si asistió hoy a esta clase
-                const attended = attendanceRecords.some(r => {
-                  const checkDate = new Date(r.checked_at);
-                  const today = new Date();
-                  return checkDate.toDateString() === today.toDateString() && r.class_type === cls.id;
-                });
-
-                return (
-                  <div 
-                    key={cls.id} 
-                    style={{
-                      background: attended ? 'rgba(52, 211, 153, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid',
-                      borderColor: attended ? 'rgba(52, 211, 153, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '10px',
-                      padding: '12px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '1.4rem' }}>{cls.icon}</span>
-                      <div>
-                        <div style={{ color: 'white', fontWeight: 700, fontSize: '0.9rem' }}>{cls.name}</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>⏱️ {cls.time} hrs</div>
-                      </div>
-                    </div>
-                    {attended ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ color: '#34D399', fontWeight: 800, fontSize: '0.8rem' }}>✔ ASISTIDO</span>
-                        <button 
-                          onClick={() => handleUnmarkAttendance(cls.id)}
+          {/* Clases de Hoy — DINÁMICO basado en suscripción activa del titular */}
+          {selfActiveSub?.service_id && (() => {
+            const todayBlocks = getTodayBlocks(selfActiveSub.service_id);
+            const service = services.find(s => s.id === selfActiveSub.service_id);
+            if (!service) return null;
+            return (
+              <div style={{ marginTop: '15px' }}>
+                <span className="metric-label" style={{ display: 'block', marginBottom: '10px', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                  Tus Clases de Hoy — {service.name}
+                </span>
+                {todayBlocks.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {todayBlocks.map((block, idx) => {
+                      // Usar service_id + hora como identificador único de clase
+                      const classTypeId = `${selfActiveSub.service_id}_${block.start.replace(':','')}`;
+                      const attended = attendanceRecords.some(r => {
+                        const checkDate = new Date(r.checked_at);
+                        return checkDate.toDateString() === new Date().toDateString() && r.class_type === classTypeId;
+                      });
+                      return (
+                        <div
+                          key={idx}
                           style={{
-                            background: 'rgba(255, 77, 77, 0.1)',
-                            border: 'none',
-                            color: '#FF4D4D',
-                            fontSize: '0.7rem',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontWeight: 700
+                            background: attended ? 'rgba(52, 211, 153, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                            border: `1px solid ${attended ? 'rgba(52, 211, 153, 0.3)' : 'rgba(255, 255, 255, 0.05)'}`,
+                            borderRadius: '10px', padding: '12px 16px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.3s'
                           }}
                         >
-                          Quitar
-                        </button>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => handleMarkAttendance(cls.id)}
-                        style={{
-                          background: 'linear-gradient(135deg, var(--aurora), #10B981)',
-                          border: 'none',
-                          color: '#060B18',
-                          fontWeight: 800,
-                          fontSize: '0.75rem',
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 10px rgba(52, 211, 153, 0.2)'
-                        }}
-                      >
-                        Marcar Clase
-                      </button>
-                    )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '1.4rem' }}>🥋</span>
+                            <div>
+                              <div style={{ color: 'white', fontWeight: 700, fontSize: '0.9rem' }}>{service.name}</div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>⏱️ {block.start} – {block.end} hrs</div>
+                            </div>
+                          </div>
+                          {attended ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ color: '#34D399', fontWeight: 800, fontSize: '0.8rem' }}>✔ ASISTIDO</span>
+                              <button onClick={() => handleUnmarkAttendance(classTypeId)} style={{ background: 'rgba(255, 77, 77, 0.1)', border: 'none', color: '#FF4D4D', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}>Quitar</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => handleMarkAttendance(classTypeId)} style={{ background: 'linear-gradient(135deg, var(--aurora), #10B981)', border: 'none', color: '#060B18', fontWeight: 800, fontSize: '0.75rem', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', boxShadow: '0 2px 10px rgba(52, 211, 153, 0.2)' }}>Marcar Clase</button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                ) : (
+                  <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', color: 'var(--text-muted)', fontSize: '0.82rem', textAlign: 'center' }}>
+                    🏖️ Sin clases hoy para {service.name}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Week Calendar */}
           <div style={{ marginTop: '25px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '15px' }}>
@@ -672,6 +697,54 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Horario Familiar — una tarjeta por miembro con suscripción activa */}
+        {!profile?.parent_id && familyProfiles.some(f => f.activeSub?.service_id) && (
+          <div style={{ marginBottom: '25px', marginTop: '20px' }}>
+            <span className="metric-label" style={{ display: 'block', marginBottom: '12px', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+              👨‍👩‍👧‍👦 Horario Familiar de Hoy
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {familyProfiles.filter(fam => fam.activeSub?.service_id).map(fam => {
+                const famService = services.find(s => s.id === fam.activeSub.service_id);
+                if (!famService) return null;
+                const famBlocks = getTodayBlocks(fam.activeSub.service_id);
+                return (
+                  <div key={fam.id} className="glass-panel" style={{ padding: '16px' }}>
+                    {/* Encabezado del miembro */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: famBlocks.length > 0 ? '12px' : '0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.1rem' }}>{(fam.age || 0) < 16 ? '👦' : '🥋'}</span>
+                        <div>
+                          <div style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{fam.name}</div>
+                          <div style={{ color: 'var(--aurora)', fontSize: '0.72rem', fontWeight: 700 }}>{famService.name}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedMemberId(fam.id)}
+                        style={{ background: 'rgba(0,180,216,0.08)', border: '1px solid rgba(0,180,216,0.2)', color: 'var(--aurora)', fontSize: '0.68rem', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Ver estadísticas
+                      </button>
+                    </div>
+                    {famBlocks.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {famBlocks.map((block, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '8px', padding: '10px 14px' }}>
+                            <span style={{ fontSize: '1.1rem' }}>🥋</span>
+                            <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600 }}>⏱️ {block.start} – {block.end} hrs</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '8px 0' }}>🏖️ Sin clases hoy</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -357,8 +357,10 @@ export default function AdminDashboard() {
       showToast("¡Video agregado a la Academia!", 'success');
       fetchVideos();
     } catch (err) {
-      console.error("Error publishing video:", err);
-      showToast("Error al guardar video.", 'error');
+      // Log detallado para diagnóstico de RLS / permisos de Supabase
+      console.error("Error publishing video — código:", err?.code, "| mensaje:", err?.message, "| detalles:", err?.details, "| hint:", err?.hint);
+      const readableError = err?.message || err?.hint || 'Verifica que el usuario tiene role = admin en Supabase.';
+      showToast(`Error al guardar video: ${readableError}`, 'error');
     } finally {
       setPublishingVideo(false);
     }
