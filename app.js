@@ -351,6 +351,8 @@ async function loginSuccess(name, isAdmin, userId, email) {
   if (myProfile) {
     currentUser.status = myProfile.status;
     currentUser.belt = myProfile.belt || 'white';
+    currentUser.waiver_signed = !!myProfile.waiver_signed;
+    currentUser.birthdate = myProfile.birthdate;
   }
 
   // Visual Transitions
@@ -2086,75 +2088,7 @@ async function startCheckoutMp() {
   }
 }
 
-// =====================================================
-// --- SANDBOX / TESTING FLOW MODULE ---
-// =====================================================
 
-async function resetTestData() {
-  if (!confirm("Esto eliminará tu asistencia y suscripciones de prueba para reiniciar el flujo. ¿Continuar?")) return;
-  
-  showToast("Reiniciando datos de prueba...");
-  
-  try {
-    // 1. Delete Attendance
-    await _supabase.from('cohab_attendance').delete().eq('profile_id', currentUser.id);
-    
-    // 2. Delete Subscriptions
-    await _supabase.from('cohab_subscriptions').delete().eq('profile_id', currentUser.id);
-    
-    // 3. Delete Family members and their data
-    const { data: family } = await _supabase.from('cohab_family_members').select('id').eq('parent_id', currentUser.id);
-    if (family && family.length > 0) {
-      const ids = family.map(f => f.id);
-      await _supabase.from('cohab_subscriptions').delete().in('family_member_id', ids);
-      await _supabase.from('cohab_family_members').delete().eq('parent_id', currentUser.id);
-    }
-
-    showToast("✅ Datos reseteados. Iniciando flujo...");
-    setTimeout(() => window.location.reload(), 1500);
-  } catch (err) {
-    console.error("Reset error:", err);
-    showToast("❌ Error al resetear datos");
-  }
-}
-
-async function simulateMembershipExpiry() {
-  showToast("Simulando vencimiento...");
-  
-  try {
-    const { error } = await _supabase
-      .from('cohab_subscriptions')
-      .update({ end_date: new Date(Date.now() - 86400000).toISOString().split('T')[0] }) // Yesterday
-      .eq('profile_id', currentUser.id)
-      .eq('status', 'active');
-
-    if (error) throw error;
-    
-    showToast("⌛ Membresía vencida simulada");
-    setTimeout(() => navigateTo('dashboard'), 1000);
-  } catch (err) {
-    console.error("Expiry simulation error:", err);
-    showToast("❌ Error al simular vencimiento");
-  }
-}
-
-let tourStep = 0;
-function startGuidedTour() {
-  tourStep = 1;
-  const guideBox = document.getElementById('tour-guide-box');
-  const stepText = document.getElementById('tour-step-text');
-  
-  if (guideBox && stepText) {
-    guideBox.style.display = 'block';
-    stepText.innerHTML = "🏁 <b>Tour Iniciado:</b> Ve al Dashboard para ver tu estado actual.";
-    navigateTo('dashboard');
-    
-    // Watch for state changes to progress the tour
-    setTimeout(() => {
-       stepText.innerHTML = "💡 <b>Paso 2:</b> Si tu membresía está vencida, aparecerá el botón 'Renovar Plan' en Acciones Rápidas. ¡Haz clic en él!";
-    }, 4000);
-  }
-}
 
 
 
@@ -2494,11 +2428,13 @@ async function fetchFamilyMembers() {
       belt: myBelt, 
       graus: myGraus, 
       progress: 0, 
-      attendance: [] 
+      attendance: [],
+      waiver_signed: !!currentUser.waiver_signed,
+      birthdate: currentUser.birthdate
     };
 
     const { data, error } = await _supabase
-      .from('cohab_family_members')
+      .from('cohab_profiles')
       .select('*')
       .eq('parent_id', currentUser.id);
 
@@ -2670,11 +2606,12 @@ function renderFamilyCart() {
   }).join('');
 }
 
-function openPlanSelector(memberId) {
+async function openPlanSelector(memberId) {
   currentMemberId = memberId;
   const modal = document.getElementById('plan-modal');
   const title = document.getElementById('plan-modal-title');
   const member = familyMembers.find(m => m.id === memberId);
+  if (!member) return;
   const nameLabel = member.id === 'me' ? 'mi plan' : `plan para ${member.name}`;
   
   if (title) title.textContent = `Elegir ${nameLabel}`;
