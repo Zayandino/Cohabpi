@@ -63,6 +63,7 @@ export default function Profile() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [discounts, setDiscounts] = useState([]);
+  const [signedWaivers, setSignedWaivers] = useState({});
 
   const handleStartEditFamily = (member) => {
     setEditingMemberId(member.id);
@@ -128,9 +129,9 @@ export default function Profile() {
       try {
         const { data, error } = await supabase
           .from('cohab_profiles')
-          .select('id, name, relationship, age, email, birthdate, scholarship_percent')
+          .select('id, name, relationship, age, email, birthdate, scholarship_percent, waiver_signed')
           .eq('parent_id', profile.id);
-        
+
         if (error) throw error;
         
         if (data && data.length > 0) {
@@ -374,6 +375,32 @@ export default function Profile() {
     }));
   };
 
+  const validateWaiversBeforeAction = () => {
+    const activeEnrollments = Object.keys(enrollments).filter(pId => enrollments[pId]?.enabled);
+    
+    for (const pId of activeEnrollments) {
+      if (pId === 'main') {
+        if (!profile?.waiver_signed) {
+          const mainWaiver = signedWaivers.main;
+          if (!mainWaiver?.health || !mainWaiver?.waiver) {
+            alert(`⚠️ Debes completar y aceptar los requisitos obligatorios de salud y liberación de responsabilidad para ti ("${profile?.name || 'Titular'}").`);
+            return false;
+          }
+        }
+      } else {
+        const famMember = family.find(f => f.id === pId);
+        if (famMember && !famMember.waiver_signed) {
+          const famWaiver = signedWaivers[pId];
+          if (!famWaiver?.health || !famWaiver?.waiver) {
+            alert(`⚠️ Debes completar y aceptar los requisitos obligatorios de salud y liberación de responsabilidad por tu familiar "${famMember.name}".`);
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
+
   const handleProcessPayment = async () => {
     setIsProcessing(true);
     const totals = calculateTotal();
@@ -389,6 +416,16 @@ export default function Profile() {
         const enrollment = enrollments[personId];
         const currentServiceId = enrollment.serviceId || services[0]?.id;
         
+        // 0. Guardar exenciones médicas firmadas en Supabase antes de activar membresías
+        const isAlreadySigned = personId === 'main' ? !!profile.waiver_signed : !!(family.find(f => f.id === personId)?.waiver_signed);
+        
+        if (!isAlreadySigned) {
+          await supabase
+            .from('cohab_profiles')
+            .update({ waiver_signed: true })
+            .eq('id', pId);
+        }
+
         // 1. Activar estado del perfil
         await supabase
           .from('cohab_profiles')
@@ -1129,6 +1166,57 @@ export default function Profile() {
                             }
                             return null;
                           })()}
+
+                          {/* Lógica de Firma Condicional para el Titular */}
+                          {(!profile?.waiver_signed) && (
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
+                              <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención (Tutor)</h5>
+                              <div style={{ marginBottom: '10px' }}>
+                                <a 
+                                  href={(profile?.age || 30) < 18 
+                                    ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
+                                    : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
+                                  } 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="auth-btn" 
+                                  style={{ background: 'var(--bg-elevated)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 10px', width: 'fit-content', margin: '0 0 10px 0' }}
+                                >
+                                  🏥 Llenar Ficha de Salud
+                                </a>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    id="waiver-health-main" 
+                                    checked={signedWaivers.main?.health || false}
+                                    onChange={(e) => setSignedWaivers(prev => ({
+                                      ...prev,
+                                      main: { ...prev.main, health: e.target.checked }
+                                    }))}
+                                    style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
+                                  />
+                                  <label htmlFor="waiver-health-main" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                                    Declaro haber completado la Ficha de Salud en el enlace superior.
+                                  </label>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    id="waiver-terms-main" 
+                                    checked={signedWaivers.main?.waiver || false}
+                                    onChange={(e) => setSignedWaivers(prev => ({
+                                      ...prev,
+                                      main: { ...prev.main, waiver: e.target.checked }
+                                    }))}
+                                    style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
+                                  />
+                                  <label htmlFor="waiver-terms-main" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                                    Asumo la responsabilidad de riesgos y acepto los términos de liberación por este plan.
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1216,6 +1304,57 @@ export default function Profile() {
                                 }
                                 return null;
                               })()}
+
+                              {/* Lógica de Firma Condicional para el Familiar */}
+                              {(!m.waiver_signed) && (
+                                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
+                                  <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención ({m.name})</h5>
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <a 
+                                      href={(m.age || 10) < 18 
+                                        ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
+                                        : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
+                                      } 
+                                      target="_blank" 
+                                      rel="noreferrer"
+                                      className="auth-btn" 
+                                      style={{ background: 'var(--bg-elevated)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 10px', width: 'fit-content', margin: '0 0 10px 0' }}
+                                    >
+                                      🏥 Llenar Ficha de Salud
+                                    </a>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                                      <input 
+                                        type="checkbox" 
+                                        id={`waiver-health-${m.id}`} 
+                                        checked={signedWaivers[m.id]?.health || false}
+                                        onChange={(e) => setSignedWaivers(prev => ({
+                                          ...prev,
+                                          [m.id]: { ...prev[m.id], health: e.target.checked }
+                                        }))}
+                                        style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
+                                      />
+                                      <label htmlFor={`waiver-health-${m.id}`} style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                                        Declaro haber completado la Ficha de Salud en el enlace superior.
+                                      </label>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                      <input 
+                                        type="checkbox" 
+                                        id={`waiver-terms-${m.id}`} 
+                                        checked={signedWaivers[m.id]?.waiver || false}
+                                        onChange={(e) => setSignedWaivers(prev => ({
+                                          ...prev,
+                                          [m.id]: { ...prev[m.id], waiver: e.target.checked }
+                                        }))}
+                                        style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
+                                      />
+                                      <label htmlFor={`waiver-terms-${m.id}`} style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                                        Asumo la responsabilidad de riesgos y acepto los términos de liberación por este familiar.
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1410,7 +1549,10 @@ export default function Profile() {
                                 <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: 0 }}>Tu membresía está 100% cubierta. No se requiere pago.</p>
                               </div>
                               <button
-                                onClick={handleProcessPayment}
+                                onClick={() => {
+                                  if (!validateWaiversBeforeAction()) return;
+                                  handleProcessPayment();
+                                }}
                                 disabled={isProcessing}
                                 className="auth-btn"
                                 style={{
@@ -1435,6 +1577,7 @@ export default function Profile() {
                           ) : (
                             <button
                               onClick={() => {
+                                if (!validateWaiversBeforeAction()) return;
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                                 setShowCheckoutModal(true);
                               }}

@@ -8,8 +8,6 @@ export default function Onboarding() {
   const navigate = useNavigate();
 
   const [phone, setPhone] = useState('');
-  const [emergencyName, setEmergencyName] = useState('');
-  const [emergencyPhone, setEmergencyPhone] = useState('');
   const [rut, setRut] = useState('');
   const [dob, setDob] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,22 +19,20 @@ export default function Onboarding() {
     setError(null);
 
     try {
-      const fullEmergency = `${emergencyName} (${emergencyPhone})`;
       const { error: updateError } = await supabase
         .from('cohab_profiles')
         .update({
           phone: phone,
           rut: rut,
-          emergency_contact: fullEmergency,
           birthdate: dob,
           role: 'miembro',
-          waiver_signed: true
+          waiver_signed: false // Inicialmente false (se firma al contratar plan)
         })
         .eq('id', user.id);
 
       if (updateError) throw updateError;
       
-      // Assume success, redirect to dashboard
+      // Redirigir al dashboard directamente
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -58,17 +54,6 @@ export default function Onboarding() {
           <div className="form-group">
             <label className="form-label">Tu Teléfono</label>
             <input type="tel" className="form-input" placeholder="+56 9..." value={phone} onChange={(e) => setPhone(e.target.value)} required />
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Contacto (Nombre)</label>
-              <input type="text" className="form-input" placeholder="Nombre" value={emergencyName} onChange={(e) => setEmergencyName(e.target.value)} required />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Emergencia (Tel)</label>
-              <input type="tel" className="form-input" placeholder="+56 9..." value={emergencyPhone} onChange={(e) => setEmergencyPhone(e.target.value)} required />
-            </div>
           </div>
 
           <div className="form-group">
