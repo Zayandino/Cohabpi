@@ -440,7 +440,7 @@ async function submitOnboarding() {
     .from('cohab_profiles')
     .update({ 
       phone: phone, 
-      emergency_contact: emergency,
+      emergency_contact: fullEmergency,
       rut: rut,
       birthdate: dob,
       role: 'miembro', // Ingresa como miembro base
