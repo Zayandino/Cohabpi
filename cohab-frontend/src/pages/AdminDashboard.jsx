@@ -1255,14 +1255,44 @@ export default function AdminDashboard() {
                       onClick={handleUpdateUserGrade}
                       disabled={updatingGrade}
                       className="auth-btn" 
-                      style={{ background: 'linear-gradient(135deg, #a78bfa, #10B981)', color: '#060B18', fontWeight: 900, height: '40px', margin: 0, flex: 1 }}
+                      style={{ 
+                        background: 'linear-gradient(135deg, #a78bfa, #10B981)', 
+                        color: '#060B18', 
+                        fontWeight: 900, 
+                        minHeight: '40px', 
+                        height: 'auto', 
+                        padding: '6px 12px',
+                        fontSize: '0.78rem',
+                        lineHeight: '1.2',
+                        textTransform: 'uppercase',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        margin: 0, 
+                        flex: 1.25 
+                      }}
                     >
-                      {updatingGrade ? 'Guardando...' : 'Guardar Grado en Supabase'}
+                      {updatingGrade ? 'Guardando...' : 'Guardar Grado'}
                     </button>
                     <button 
                       onClick={() => setSelectedUser(null)}
                       className="auth-btn" 
-                      style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontWeight: 800, height: '40px', margin: 0, flex: 1 }}
+                      style={{ 
+                        background: 'transparent', 
+                        border: '1px solid rgba(255,255,255,0.1)', 
+                        color: 'white', 
+                        fontWeight: 800, 
+                        minHeight: '40px', 
+                        height: 'auto', 
+                        padding: '6px 12px',
+                        fontSize: '0.78rem',
+                        lineHeight: '1.2',
+                        textTransform: 'uppercase',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        margin: 0, 
+                        flex: 0.75 
+                      }}
                     >
                       Cancelar
                     </button>
