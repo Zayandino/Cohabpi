@@ -322,26 +322,7 @@
                   <label>Fecha de Nacimiento</label>
                   <input type="date" id="new-member-dob" class="auth-input" onchange="checkMemberAge()">
                 </div>
-                <div id="member-health-section" style="display:none; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--border-glass);">
-                  <h4 id="member-health-title" style="color:var(--aurora); margin-bottom:10px; font-size:1rem;">Requisitos Obligatorios</h4>
-                  
-                  <div style="margin-bottom: 15px;">
-                    <a id="member-health-link" href="#" target="_blank" class="auth-btn" style="background:var(--bg-elevated); color:white; text-decoration:none; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;">
-                      🏥 Llenar Ficha de Salud
-                    </a>
-                    <div style="display:flex; align-items:flex-start; gap:8px;">
-                      <input type="checkbox" id="member-health-check" style="width:18px; height:18px; margin-top:2px;">
-                      <label for="member-health-check" style="font-size:0.8rem; color:var(--text-muted);">Declaro haber completado la Ficha de Salud en el enlace superior.</label>
-                    </div>
-                  </div>
 
-                  <div>
-                    <div style="display:flex; align-items:flex-start; gap:8px;">
-                      <input type="checkbox" id="member-waiver-check" style="width:18px; height:18px; margin-top:2px;">
-                      <label for="member-waiver-check" style="font-size:0.8rem; color:var(--text-muted);">Asumo la responsabilidad de riesgos y acepto los términos de liberación por este familiar.</label>
-                    </div>
-                  </div>
-                </div>
               </div>
               <div class="modal-footer" style="margin-top:20px;">
                 <button class="auth-btn" style="background: linear-gradient(135deg, var(--crimson-deep), var(--crimson));" onclick="confirmAddMember()">GUARDAR FAMILIAR</button>
@@ -428,16 +409,7 @@
               <label>Tu Teléfono</label>
               <input type="tel" id="onboarding-phone" class="auth-input" placeholder="+56 9...">
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-              <div class="admin-input-group" style="margin-bottom: 0;">
-                <label>Contacto Emergencia (Nombre)</label>
-                <input type="text" id="onboarding-emergency-name" class="auth-input" placeholder="Nombre">
-              </div>
-              <div class="admin-input-group" style="margin-bottom: 0;">
-                <label>Teléfono Emergencia</label>
-                <input type="tel" id="onboarding-emergency-phone" class="auth-input" placeholder="+56 9...">
-              </div>
-            </div>
+
             <div class="admin-input-group" style="margin-bottom: 16px;">
               <label>RUT (Para acceso futuro)</label>
               <input type="text" id="onboarding-rut" class="auth-input" placeholder="12345678-9">

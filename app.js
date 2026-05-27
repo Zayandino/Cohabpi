@@ -359,8 +359,8 @@ async function loginSuccess(name, isAdmin, userId, email) {
   document.getElementById('screen-auth').style.display = 'none';
   document.getElementById('app-main-content').style.display = 'block';
 
-  // Check Onboarding
-  if (!myProfile?.waiver_signed && !isAdmin) {
+  // Check Onboarding - Solo requiere Teléfono y RUT básicos para ingresar
+  if ((!myProfile?.phone || !myProfile?.rut) && !isAdmin) {
     // Force onboarding
     document.getElementById('bottom-nav').style.display = 'none';
     navigateTo('onboarding');
@@ -424,17 +424,13 @@ async function loginSuccess(name, isAdmin, userId, email) {
 
 async function submitOnboarding() {
   const phone = document.getElementById('onboarding-phone').value;
-  const emergencyName = document.getElementById('onboarding-emergency-name').value;
-  const emergencyPhone = document.getElementById('onboarding-emergency-phone').value;
   const rut = document.getElementById('onboarding-rut').value;
   const dob = document.getElementById('onboarding-dob').value;
 
-  if (!phone || !rut || !dob || !emergencyName || !emergencyPhone) {
-    showToast('⚠️ Por favor completa todos los campos (Teléfono, Contacto, RUT, Fecha)');
+  if (!phone || !rut || !dob) {
+    showToast('⚠️ Por favor completa todos los campos (Teléfono, RUT, Fecha)');
     return;
   }
-
-  const fullEmergency = `${emergencyName} (${emergencyPhone})`;
 
   showToast('Guardando tu perfil...');
 
@@ -442,11 +438,10 @@ async function submitOnboarding() {
     .from('cohab_profiles')
     .update({ 
       phone: phone, 
-      emergency_contact: fullEmergency,
       rut: rut,
       birthdate: dob,
       role: 'miembro', // Ingresa como miembro base
-      waiver_signed: true // Passthrough para saltar el bloqueo de app.js
+      waiver_signed: false // Inicialmente false (se firma al contratar plan)
     })
     .eq('id', currentUser.id);
 
@@ -454,6 +449,12 @@ async function submitOnboarding() {
     showToast(`❌ Error: ${error.message}`);
     return;
   }
+
+  // Actualizar datos del usuario actual en memoria para sincronizar
+  currentUser.phone = phone;
+  currentUser.rut = rut;
+  currentUser.birthdate = dob;
+  currentUser.waiver_signed = false;
 
   showToast('✅ ¡Perfil completado!');
   celebrate();
@@ -1043,27 +1044,7 @@ function renderAdminServicesList() {
   }).join('');
 }
 
-function openPlanSelector(memberId) {
-  currentMemberId = memberId;
-  const modal = document.getElementById('plan-modal');
-  const title = document.getElementById('plan-modal-title');
-  const member = familyMembers.find(m => m.id === memberId);
-  const nameLabel = member.id === currentUser?.id ? 'mi plan' : `plan para ${member.name}`;
-  
-  title.textContent = `Elegir ${nameLabel}`;
-  
-  activeService = null;
-  document.getElementById('modal-duration-section').style.display = 'none';
-  document.getElementById('modal-confirm-btn').style.opacity = '0.5';
-  document.getElementById('modal-confirm-btn').style.pointerEvents = 'none';
 
-  renderModalServiceCatalog();
-  modal.style.display = 'flex';
-}
-
-function closePlanSelector() {
-  document.getElementById('plan-modal').style.display = 'none';
-}
 
 function addNewMember() {
   openAddMemberModal();
@@ -1114,8 +1095,6 @@ async function confirmAddMember() {
   const dobInput = document.getElementById('new-member-dob').value;
   const name = input ? input.value.trim() : '';
   const rut = rutInput ? rutInput.value.trim() : '';
-  const healthChecked = document.getElementById('member-health-check').checked;
-  const waiverChecked = document.getElementById('member-waiver-check').checked;
   
   if (!name || !rut) {
     showToast('⚠️ Ingresa nombre y RUT válidos');
@@ -1123,10 +1102,6 @@ async function confirmAddMember() {
   }
   if (!dobInput) {
     showToast('⚠️ Ingresa la fecha de nacimiento');
-    return;
-  }
-  if (!healthChecked || !waiverChecked) {
-    showToast('⚠️ Debes completar y aceptar los requisitos obligatorios');
     return;
   }
 
@@ -1153,7 +1128,7 @@ async function confirmAddMember() {
         role: 'alumno',
         belt: 'white',
         status: 'activo',
-        waiver_signed: true
+        waiver_signed: false // Inicialmente false (se firma al contratar plan)
       }
     ])
     .select();
@@ -1246,8 +1221,42 @@ function selectModalDuration(months) {
   btn.style.pointerEvents = 'auto';
 }
 
-function confirmPlanSelection() {
+async function confirmPlanSelection() {
   if (!activeService || !pendingDuration) return;
+
+  // Si la sección de salud está visible, validar checkboxes
+  const healthSection = document.getElementById('plan-health-section');
+  if (healthSection && healthSection.style.display !== 'none') {
+    const healthChecked = document.getElementById('plan-health-check').checked;
+    const waiverChecked = document.getElementById('plan-waiver-check').checked;
+
+    if (!healthChecked || !waiverChecked) {
+      showToast('⚠️ Debes completar y aceptar los requisitos obligatorios de salud y liberación de responsabilidad');
+      return;
+    }
+
+    // Guardar firma de waiver en Supabase para el miembro en tiempo real
+    const targetId = currentMemberId === 'me' ? currentUser.id : currentMemberId;
+    showToast("Guardando aceptación de responsabilidad...");
+
+    const { error: waiverErr } = await _supabase
+      .from('cohab_profiles')
+      .update({ waiver_signed: true })
+      .eq('id', targetId);
+
+    if (waiverErr) {
+      showToast(`❌ Error al guardar firma: ${waiverErr.message}`);
+      return;
+    }
+
+    // Actualizar localmente en memoria para evitar volver a pedirlo en la sesión actual
+    if (currentMemberId === 'me') {
+      currentUser.waiver_signed = true;
+    } else {
+      const m = familyMembers.find(f => f.id === currentMemberId);
+      if (m) m.waiver_signed = true;
+    }
+  }
 
   const monthlyPrice = activeService.discountPrice;
   let finalPrice = monthlyPrice * pendingDuration;
@@ -1265,7 +1274,7 @@ function confirmPlanSelection() {
   closePlanSelector();
   renderFamilyCart();
   updateCheckoutSummary();
-  showToast(`✅ Plan actualizado exitosamente.`);
+  showToast(`✅ Plan seleccionado exitosamente.`);
 }
 
 function updateCheckoutSummary() {
@@ -2623,6 +2632,60 @@ async function openPlanSelector(memberId) {
   if (confBtn) {
     confBtn.style.opacity = '0.5';
     confBtn.style.pointerEvents = 'none';
+  }
+
+  // Lógica de Firma Condicional: verificar waiver en tiempo real
+  const targetId = memberId === 'me' ? currentUser.id : memberId;
+  const healthSection = document.getElementById('plan-health-section');
+  
+  if (healthSection) {
+    healthSection.style.display = 'none'; // Por defecto ocultar mientras carga
+    
+    try {
+      const { data: profile, error: profileErr } = await _supabase
+        .from('cohab_profiles')
+        .select('waiver_signed, birthdate')
+        .eq('id', targetId)
+        .single();
+
+      if (profileErr) {
+        console.error("Error fetching profile waiver status:", profileErr);
+      } else if (profile && !profile.waiver_signed) {
+        // No tiene firma, mostramos los requisitos
+        healthSection.style.display = 'block';
+        
+        const healthCheck = document.getElementById('plan-health-check');
+        const waiverCheck = document.getElementById('plan-waiver-check');
+        if (healthCheck) healthCheck.checked = false;
+        if (waiverCheck) waiverCheck.checked = false;
+
+        // Calcular edad
+        const birthdate = profile.birthdate;
+        let age = 30; // Fallback adulto
+        if (birthdate) {
+          const birth = new Date(birthdate);
+          const today = new Date();
+          age = today.getFullYear() - birth.getFullYear();
+          const m = today.getMonth() - birth.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+            age--;
+          }
+        }
+
+        const healthLink = document.getElementById('plan-health-link');
+        if (healthLink) {
+          if (age < 18) {
+            healthLink.href = "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform";
+            healthLink.innerHTML = "🏥 Llenar Ficha de Salud (Menores)";
+          } else {
+            healthLink.href = "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1";
+            healthLink.innerHTML = "🏥 Llenar Ficha de Salud (Adultos)";
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Exception checking waiver status:", e);
+    }
   }
 
   if (typeof renderModalServiceCatalog === 'function') renderModalServiceCatalog();
