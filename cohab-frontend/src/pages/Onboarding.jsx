@@ -21,14 +21,16 @@ export default function Onboarding() {
     setError(null);
 
     try {
+      const fullEmergency = `${emergencyName} (${emergencyPhone})`;
       const { error: updateError } = await supabase
         .from('cohab_profiles')
         .update({
           phone: phone,
-          rut: rut, // Ensure RUT is supported in DB schema or handle differently if it's stored in a JSON metadata field
-          emergency_contact_name: emergencyName,
-          emergency_contact_phone: emergencyPhone,
-          birth_date: dob
+          rut: rut,
+          emergency_contact: fullEmergency,
+          birthdate: dob,
+          role: 'miembro',
+          waiver_signed: true
         })
         .eq('id', user.id);
 
