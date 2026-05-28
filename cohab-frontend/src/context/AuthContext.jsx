@@ -16,10 +16,12 @@ export const AuthProvider = ({ children }) => {
         .eq('id', userId)
         .single();
         
-      if (error) throw error;
-      setProfile(data);
+      // PGRST116 = no rows found (usuario recién creado antes del trigger)
+      if (error && error.code !== 'PGRST116') throw error;
+      setProfile(data || null);
     } catch (error) {
       console.error('Error fetching profile:', error.message);
+      setProfile(null);
     } finally {
       setLoading(false);
     }
@@ -52,12 +54,19 @@ export const AuthProvider = ({ children }) => {
     return await supabase.auth.signInWithPassword({ email, password });
   };
 
+  // Registra un nuevo usuario en Supabase Auth
+  // El trigger handle_new_user() crea automáticamente la fila en cohab_profiles
+  const signUp = async (email, password) => {
+    return await supabase.auth.signUp({ email, password });
+  };
+
   const signOut = async () => {
     return await supabase.auth.signOut();
   };
 
   const value = {
     signIn,
+    signUp,
     signOut,
     user,
     profile,
