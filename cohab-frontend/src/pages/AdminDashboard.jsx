@@ -150,12 +150,51 @@ export default function AdminDashboard() {
           }
         }
       } catch (err) {
-        console.warn('Error al sincronizar servicios oficiales (no crítico):', err);
+        console.error("Error sincronizando servicios:", err);
       }
     };
-
     syncOfficialServices();
   }, []);
+
+  // AUTO-CREACIÓN DE BENEFICIOS OFICIALES al montar el componente
+  useEffect(() => {
+    const syncOfficialBenefits = async () => {
+      try {
+        const { data: existing } = await supabase
+          .from('cohab_discounts')
+          .select('title');
+
+        const existingTitles = (existing || []).map(b => b.title.toLowerCase());
+
+        const officialBenefits = [
+          {
+            title: '15% Descuento Familiar',
+            description: 'Inscribe a 2 o más miembros de tu grupo familiar y obtén automáticamente 15% de descuento sobre el total de tu mensualidad.',
+            code: '👨‍👩‍👧‍👦'
+          },
+          {
+            title: 'Ahorro por Pago Anticipado',
+            description: 'Paga de forma anticipada tu membresía y recibe espectaculares descuentos: 3 meses (10%), 6 meses (15%) o un año completo (25%).',
+            code: '📅'
+          }
+        ];
+
+        let added = false;
+        for (const ben of officialBenefits) {
+          if (!existingTitles.includes(ben.title.toLowerCase())) {
+            const { error } = await supabase.from('cohab_discounts').insert([ben]);
+            if (!error) added = true;
+          }
+        }
+        if (added && activeTab === 'benefits') {
+          fetchBenefits(); // Refrescar si estábamos en esa pestaña
+        }
+      } catch (err) {
+        console.error("Error sincronizando beneficios:", err);
+      }
+    };
+    syncOfficialBenefits();
+  }, [activeTab]);
 
   // Carga inicial de todos los usuarios (para Grados y Becas)
   const fetchInitialUsers = async () => {

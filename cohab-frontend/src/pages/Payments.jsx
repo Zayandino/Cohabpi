@@ -60,61 +60,10 @@ export default function Payments() {
           </p>
         </div>
 
-        {/* Grid de Tarjetas de Beneficios */}
+        </div>
+
+        {/* Renderizar descuentos adicionales desde la base de datos */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px' }}>
-          
-          <div className="glass-panel" style={{ 
-            padding: '18px', 
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 11, 24, 0.8))', 
-            border: '1px solid rgba(16, 185, 129, 0.25)', 
-            display: 'flex', 
-            gap: '15px', 
-            alignItems: 'center',
-            boxShadow: '0 4px 20px rgba(16, 185, 129, 0.05)',
-            borderRadius: '12px'
-          }}>
-            <span style={{ fontSize: '2.2rem' }}>👨‍👩‍👧‍👦</span>
-            <div>
-              <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.92rem', fontWeight: 800 }}>15% Descuento Familiar</h4>
-              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.35 }}>Inscribe a 2 o más miembros de tu grupo familiar y obtén automáticamente 15% de descuento sobre el total de tu mensualidad.</p>
-            </div>
-          </div>
-
-          <div className="glass-panel" style={{ 
-            padding: '18px', 
-            background: 'linear-gradient(135deg, rgba(0, 180, 216, 0.08), rgba(6, 11, 24, 0.8))', 
-            border: '1px solid rgba(0, 180, 216, 0.25)', 
-            display: 'flex', 
-            gap: '15px', 
-            alignItems: 'center',
-            boxShadow: '0 4px 20px rgba(0, 180, 216, 0.05)',
-            borderRadius: '12px'
-          }}>
-            <span style={{ fontSize: '2.2rem' }}>📅</span>
-            <div>
-              <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.92rem', fontWeight: 800 }}>Ahorro por Pago Anticipado</h4>
-              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.35 }}>Paga de forma anticipada tu membresía y recibe espectaculares descuentos: 3 meses (10%), 6 meses (15%) o un año completo (25%).</p>
-            </div>
-          </div>
-
-          <div className="glass-panel" style={{ 
-            padding: '18px', 
-            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(6, 11, 24, 0.8))', 
-            border: '1px solid rgba(245, 158, 11, 0.25)', 
-            display: 'flex', 
-            gap: '15px', 
-            alignItems: 'center',
-            boxShadow: '0 4px 20px rgba(245, 158, 11, 0.05)',
-            borderRadius: '12px'
-          }}>
-            <span style={{ fontSize: '2.2rem' }}>🏥</span>
-            <div>
-              <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.92rem', fontWeight: 800 }}>Convenio Caja Los Andes</h4>
-              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.35 }}>Presenta tu cupón digital o acreditación oficial de afiliado a Caja Los Andes y accede a un 20% de descuento preferencial.</p>
-            </div>
-          </div>
-
-          {/* Renderizar descuentos adicionales desde la base de datos */}
           {loading ? (
             <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.75rem', padding: '10px' }}>Cargando convenios dinámicos...</p>
           ) : (
