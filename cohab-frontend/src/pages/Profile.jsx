@@ -402,16 +402,16 @@ export default function Profile() {
     const totals = calculateTotal();
     
     try {
-      // Simular tiempo de carga de pasarela de pago
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
       const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
-      
+      if (activePeople.length === 0) {
+         alert("Selecciona al menos un servicio.");
+         setIsProcessing(false);
+         return;
+      }
+
+      // 0. Guardar exenciones médicas firmadas en Supabase antes de ir al pago
       for (const personId of activePeople) {
         const pId = personId === 'main' ? profile.id : personId;
-        const personServices = enrollments[personId] || [];
-        
-        // 0. Guardar exenciones médicas firmadas en Supabase antes de activar membresías
         const isAlreadySigned = personId === 'main' ? !!profile.waiver_signed : !!(family.find(f => f.id === personId)?.waiver_signed);
         
         if (!isAlreadySigned) {
@@ -420,47 +420,53 @@ export default function Profile() {
             .update({ waiver_signed: true })
             .eq('id', pId);
         }
-
-        // 1. Activar estado del perfil
-        await supabase
-          .from('cohab_profiles')
-          .update({ status: 'activo' })
-          .eq('id', pId);
-
-        // 2. Crear suscripciones para cada servicio seleccionado
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + prepayPeriod);
-
-        for (const entry of personServices) {
-          await supabase
-            .from('cohab_subscriptions')
-            .insert([{
-              profile_id: pId,
-              service_id: entry.serviceId,
-              status: 'active',
-              start_date: startDate.toISOString().split('T')[0],
-              end_date: endDate.toISOString().split('T')[0]
-            }]);
-        }
       }
 
-      // 3. Registrar pago único global aprobado
-      await supabase
-        .from('cohab_payments')
+      // 1. Crear la sesión del carrito en Supabase localmente (tabla cohab_checkout_sessions)
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('cohab_checkout_sessions')
         .insert([{
-          profile_id: profile.id,
-          amount: totals.finalTotal,
-          status: 'approved',
-          payment_method: paymentMethod,
-          payment_date: new Date().toISOString()
-        }]);
+          payer_id: profile.id,
+          total_amount: totals.finalTotal,
+          status: 'pending',
+          cart_data: {
+            months: prepayPeriod,
+            enrollments: enrollments
+          }
+        }])
+        .select('id')
+        .single();
+
+      if (sessionError) throw sessionError;
       
-      setPaymentSuccess(true);
+      const checkoutSessionId = sessionData.id;
+
+      // 2. Llamar a la Edge Function para generar la preferencia de Mercado Pago
+      const { data, error } = await supabase.functions.invoke('create-preference', {
+        body: {
+          checkout_session_id: checkoutSessionId,
+          payer_id: profile.id,
+          total_amount: totals.finalTotal,
+          origin_url: window.location.origin
+        }
+      });
+
+      if (error || data?.error) {
+        throw new Error(error?.message || data?.error || "Error al generar link de pago");
+      }
+
+      // 3. Redirigir al usuario a Mercado Pago
+      // Nota: init_point es producción, sandbox_init_point es para pruebas
+      const urlToRedirect = data?.sandbox_init_point || data?.init_point;
+      if (urlToRedirect) {
+        window.location.href = urlToRedirect;
+      } else {
+        throw new Error("No se recibió la URL de pago desde Mercado Pago.");
+      }
+      
     } catch (err) {
       console.error("Payment registration failed:", err);
-      alert("Error al procesar el pago.");
-    } finally {
+      alert("Error al procesar el pago: " + (err.message || "Inténtalo de nuevo."));
       setIsProcessing(false);
     }
   };

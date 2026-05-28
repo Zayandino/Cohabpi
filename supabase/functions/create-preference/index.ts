@@ -7,44 +7,41 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Manejo de CORS para peticiones del frontend
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { items, profile_id, service_id, months, origin_url } = await req.json()
+    const { checkout_session_id, payer_id, total_amount, origin_url } = await req.json()
 
-    if (!items || !profile_id || !service_id || !months) {
+    if (!checkout_session_id || !payer_id || !total_amount) {
       throw new Error("Missing required parameters for payment.")
     }
 
-    // 1. Instanciar SDK MercadoPago con el token secreto
     const client = new MercadoPagoConfig({ 
       accessToken: Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || ''
     })
     const preference = new Preference(client)
 
-    // external_reference nos sirve para saber qué acreditar cuando llega el Webhook
-    const externalReference = `${profile_id}_${service_id}_${months}`
+    // El external_reference será el ID de la sesión del carrito
+    const externalReference = checkout_session_id
 
-    // 2. Crear Preferencia de Pago
     const result = await preference.create({
       body: {
-        items: items.map((item: any) => ({
-          id: item.id || service_id,
-          title: item.title,
-          quantity: item.quantity,
-          unit_price: Math.round(item.unit_price), // MP exige enteros
+        items: [{
+          id: 'suscripcion-cohab',
+          title: 'Suscripciones Cohab Los Andes',
+          quantity: 1,
+          unit_price: Math.round(total_amount),
           currency_id: 'CLP',
-        })),
+        }],
         payer: {
-          email: `${profile_id}@cohab.app` // Email ficticio o puedes pasar el real
+          email: `${payer_id}@cohab.app` 
         },
         back_urls: {
-          success: `${origin_url}/feedback.html?status=success`,
-          failure: `${origin_url}/feedback.html?status=failure`,
-          pending: `${origin_url}/feedback.html?status=pending`,
+          success: `${origin_url}/payments`,
+          failure: `${origin_url}/payments`,
+          pending: `${origin_url}/payments`,
         },
         auto_return: 'approved',
         notification_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/mp-webhook`,
