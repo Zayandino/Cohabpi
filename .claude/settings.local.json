@@ -6,7 +6,20 @@
       "Bash(Sort-Object FullName)",
       "Bash(Format-List)",
       "Bash(pip install *)",
-      "Bash(python -m pytest test_cohab.py -v)"
+      "Bash(python -m pytest test_cohab.py -v)",
+      "Bash(dir \"c:\\\\Users\\\\eduar\\\\Cohabpi\\\\cohab-frontend\\\\src\")",
+      "Bash(npm run *)",
+      "Bash(Start-Process npm *)",
+      "Bash(Start-Sleep 3)",
+      "Bash(Write-Output \"Server starting...\")",
+      "Bash(start http://localhost:5175)",
+      "Bash(curl -s http://localhost:5175 -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s \"http://localhost:5175/src/pages/Profile.jsx\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(node --input-type=module)",
+      "Bash(timeout 8 npx vite build --mode development)",
+      "Bash(start http://localhost:5175/login)",
+      "Bash(timeout 15 npx vite build --mode development)",
+      "Bash(npx @playwright/mcp@latest --version)"
     ]
   }
 }

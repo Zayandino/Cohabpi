@@ -446,6 +446,7 @@ export default function Profile() {
         body: {
           checkout_session_id: checkoutSessionId,
           payer_id: profile.id,
+          payer_email: profile.email || `${profile.id}@cohab.app`,
           total_amount: totals.finalTotal,
           origin_url: window.location.origin
         }
@@ -1230,7 +1231,6 @@ export default function Profile() {
                             </div>
                           )}
                         </div>
-                      )}
                     </div>
 
                     {/* Miembros Familiares */}
@@ -1378,7 +1378,6 @@ export default function Profile() {
                                 </div>
                               )}
                             </div>
-                          )}
                         </div>
                       );
                     })}

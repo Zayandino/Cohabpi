@@ -2928,6 +2928,7 @@ select.form-input, select.auth-input, select {
 }
 @keyframes fadeIn { to { opacity: 1; } }
 @keyframes slideUp { to { transform: translateY(0); } }
+@keyframes progressBar { from { width: 0% } to { width: 100% } }
 
 /* --- Videoteca Paywall & YouTube Modal --- */
 .paywall-overlay {

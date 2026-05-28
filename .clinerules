@@ -1,0 +1,10 @@
+# REGLAS CRÍTICAS DEL USUARIO (NUNCA ROMPER)
+
+1. **PROHIBICIÓN ESTRICTA DE GIT PUSH AUTOMÁTICO:**
+   - NUNCA, bajo NINGUNA circunstancia, ejecutes `git push`, `git commit` (a ramas de producción como main/master), o comandos de despliegue sin que el usuario te lo pida TEXTUALMENTE (ej. "sube los cambios", "push", "haz commit y sube").
+   - Es una regla sistémica inviolable. Siempre debes hacer los cambios locales, avisar al usuario y esperar su orden explícita antes de subir nada al repositorio remoto.
+   - ¡NUNCA MÁS!
+
+2. **Permisos de Base de Datos y VPS:**
+   - Recuerda que TIENES ACCESO SSH al servidor Dokploy (`ssh dokploy`), por lo que puedes ejecutar comandos Docker, ver logs, y modificar volúmenes directamente si es necesario.
+   - Siempre verifica tu conectividad (ej. `ssh dokploy docker ps`) antes de decirle al usuario que "no tienes acceso".

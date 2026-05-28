@@ -12,13 +12,13 @@ serve(async (req) => {
   }
 
   try {
-    const { checkout_session_id, payer_id, total_amount, origin_url } = await req.json()
+    const { checkout_session_id, payer_id, payer_email, total_amount, origin_url } = await req.json()
 
     if (!checkout_session_id || !payer_id || !total_amount) {
       throw new Error("Missing required parameters for payment.")
     }
 
-    const client = new MercadoPagoConfig({ 
+    const client = new MercadoPagoConfig({
       accessToken: Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || ''
     })
     const preference = new Preference(client)
@@ -36,12 +36,12 @@ serve(async (req) => {
           currency_id: 'CLP',
         }],
         payer: {
-          email: `${payer_id}@cohab.app` 
+          email: payer_email || `${payer_id}@cohab.app`
         },
         back_urls: {
-          success: `${origin_url}/payments`,
-          failure: `${origin_url}/payments`,
-          pending: `${origin_url}/payments`,
+          success: `${origin_url}/beneficios?pago=aprobado`,
+          failure: `${origin_url}/beneficios?pago=rechazado`,
+          pending: `${origin_url}/beneficios?pago=pendiente`,
         },
         auto_return: 'approved',
         notification_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/mp-webhook`,

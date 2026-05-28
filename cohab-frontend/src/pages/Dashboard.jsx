@@ -745,6 +745,62 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ══════════ REDES SOCIALES ══════════ */}
+        <div style={{ marginTop: '28px', marginBottom: '10px' }}>
+          <span className="metric-label" style={{ display: 'block', marginBottom: '12px', textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: '0.5px' }}>
+            🌐 Redes Sociales
+          </span>
+          <div style={{ display: 'flex', gap: '10px' }}>
+
+            {/* Instagram */}
+            <a
+              href="https://www.instagram.com/cohab_los_andes/"
+              target="_blank"
+              rel="noopener noreferrer"
+              id="instagram-link"
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: '8px', padding: '14px 10px',
+                background: 'linear-gradient(135deg, rgba(225,48,108,0.1), rgba(6,11,24,0.85))',
+                border: '1px solid rgba(225,48,108,0.25)',
+                borderRadius: '12px', textDecoration: 'none', color: 'white',
+                cursor: 'pointer', transition: 'all 0.25s'
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(225,48,108,0.5)'; e.currentTarget.style.background = 'linear-gradient(135deg, rgba(225,48,108,0.18), rgba(6,11,24,0.9))'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(225,48,108,0.25)'; e.currentTarget.style.background = 'linear-gradient(135deg, rgba(225,48,108,0.1), rgba(6,11,24,0.85))'; }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(225,48,108,0.9)" strokeWidth="1.8">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                <circle cx="12" cy="12" r="4"/>
+                <circle cx="17.5" cy="6.5" r="1" fill="rgba(225,48,108,0.9)" stroke="none"/>
+              </svg>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(225,48,108,0.9)' }}>Instagram</span>
+            </a>
+
+            {/* Smoothcomp */}
+            <a
+              href="https://smoothcomp.com/en/club/77186"
+              target="_blank"
+              rel="noopener noreferrer"
+              id="smoothcomp-link"
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: '8px', padding: '14px 10px',
+                background: 'linear-gradient(135deg, rgba(220,38,38,0.1), rgba(6,11,24,0.85))',
+                border: '1px solid rgba(220,38,38,0.25)',
+                borderRadius: '12px', textDecoration: 'none', color: 'white',
+                cursor: 'pointer', transition: 'all 0.25s'
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.5)'; e.currentTarget.style.background = 'linear-gradient(135deg, rgba(220,38,38,0.18), rgba(6,11,24,0.9))'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.25)'; e.currentTarget.style.background = 'linear-gradient(135deg, rgba(220,38,38,0.1), rgba(6,11,24,0.85))'; }}
+            >
+              <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>🥊</span>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(220,38,38,0.9)' }}>Smoothcomp</span>
+            </a>
+
+          </div>
+        </div>
       </div>
     </section>
   );
