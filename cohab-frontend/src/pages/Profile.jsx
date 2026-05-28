@@ -190,6 +190,20 @@ export default function Profile() {
           console.warn("No se pudieron cargar descuentos en perfil:", discErr);
         }
         
+        // Fetch active subscriptions to pre-load
+        let activeSubs = [];
+        try {
+          const personIds = [profile.id, ...(family || []).map(f => f.id)];
+          const { data: subsData } = await supabase
+            .from('cohab_subscriptions')
+            .select('profile_id, service_id')
+            .in('profile_id', personIds)
+            .eq('status', 'active');
+          activeSubs = subsData || [];
+        } catch (subsErr) {
+          console.warn("No se pudieron cargar suscripciones activas:", subsErr);
+        }
+
         // Helper to get default service based on age
         const getDefaultServiceForAge = (age, servicesList) => {
           if (!servicesList || servicesList.length === 0) return '';
@@ -204,22 +218,27 @@ export default function Profile() {
           return servicesList[0]?.id || '';
         };
 
-        // Initialize enrollments state safely
-        const initial = {
-          main: { 
-            enabled: profile?.status !== 'activo', 
-            serviceId: getDefaultServiceForAge(profile?.age || 0, servicesData), 
-            tierIdx: 0 
+        const initial = {};
+        
+        const populateInitial = (personId, age, isMain) => {
+          const personSubs = activeSubs.filter(s => s.profile_id === personId);
+          if (personSubs.length > 0) {
+            const uniqueServiceIds = [...new Set(personSubs.map(s => s.service_id))];
+            return uniqueServiceIds.map(sid => ({ serviceId: sid, tierIdx: 0 }));
+          } else {
+            if (isMain && profile?.status !== 'activo') {
+              const defId = getDefaultServiceForAge(age, servicesData);
+              return defId ? [{ serviceId: defId, tierIdx: 0 }] : [];
+            }
+            return [];
           }
         };
+
+        initial.main = populateInitial(profile.id, profile?.age || 0, true);
         
         if (family && family.length > 0) {
           family.forEach(m => {
-            initial[m.id] = { 
-              enabled: false, 
-              serviceId: getDefaultServiceForAge(m.age || 0, servicesData), 
-              tierIdx: 0 
-            };
+            initial[m.id] = populateInitial(m.id, m.age || 0, false);
           });
         }
         setEnrollments(initial);
@@ -255,31 +274,16 @@ export default function Profile() {
 
   const calculateTotal = () => {
     let subtotal = 0;
-    let activeEnrollmentsCount = 0;
+    let peopleWithServicesCount = 0;
     
     Object.keys(enrollments).forEach(personId => {
-      const entry = enrollments[personId];
-      
-      // Obtener edad para calcular el fallback de disciplina de adultos si corresponde
-      let age = 0;
-      if (personId === 'main') {
-        age = profile?.age || 0;
-      } else {
-        const famMember = family.find(f => f.id === personId);
-        age = famMember?.age || 0;
+      const personServices = enrollments[personId] || [];
+      if (personServices.length > 0) {
+        peopleWithServicesCount++;
       }
-
-      const defaultServiceId = services.length > 0 ? (
-        (age > 16) 
-          ? (services.find(s => !s.name.toLowerCase().includes('kids') && !s.name.toLowerCase().includes('infantil') && !s.name.toLowerCase().includes('niños'))?.id || services[0]?.id)
-          : services[0]?.id
-      ) : '';
-
-      const currentServiceId = entry?.serviceId || defaultServiceId;
       
-      if (entry?.enabled && currentServiceId) {
-        activeEnrollmentsCount++;
-        const service = services.find(s => s.id === currentServiceId);
+      personServices.forEach(entry => {
+        const service = services.find(s => s.id === entry.serviceId);
         if (service) {
           const hasTiers = service.pricing_tiers && service.pricing_tiers.length > 0;
           let basePrice = 0;
@@ -297,10 +301,10 @@ export default function Profile() {
           }
           subtotal += basePrice;
         }
-      }
+      });
     });
 
-    const isFamilyDiscountApplicable = activeEnrollmentsCount > 1;
+    const isFamilyDiscountApplicable = peopleWithServicesCount > 1;
     const familyDiscountAmount = isFamilyDiscountApplicable ? Math.round(subtotal * 0.15) : 0;
     const monthlyTotalAfterFamilyDiscount = subtotal - familyDiscountAmount;
 
@@ -315,7 +319,7 @@ export default function Profile() {
 
     return {
       subtotal,
-      activeEnrollmentsCount,
+      activeEnrollmentsCount: peopleWithServicesCount,
       isFamilyDiscountApplicable,
       familyDiscountAmount,
       monthlyTotalAfterFamilyDiscount,
@@ -325,60 +329,52 @@ export default function Profile() {
     };
   };
 
-  const handleToggleEnrollment = (personId) => {
-    setEnrollments(prev => ({
-      ...prev,
-      [personId]: {
-        ...prev[personId],
-        enabled: !prev[personId]?.enabled
-      }
-    }));
-  };
-
-  const handleServiceSelectSafe = (personId, serviceId) => {
+  const handleToggleService = (personId, serviceId, isChecked) => {
     const selectedService = services.find(s => s.id === serviceId);
     if (!selectedService) return;
 
-    let targetAge = 0;
-    if (personId === 'main') {
-      targetAge = profile?.age || 0;
+    if (isChecked) {
+      let targetAge = 0;
+      if (personId === 'main') {
+        targetAge = profile?.age || 0;
+      } else {
+        const famMember = family.find(f => f.id === personId);
+        targetAge = famMember?.age || 0;
+      }
+
+      if (targetAge > 16) {
+        const nameLower = selectedService.name.toLowerCase();
+        if (nameLower.includes('kids') || nameLower.includes('infantil') || nameLower.includes('niños')) {
+          alert("Regla de Cohab Tatami: No es posible inscribir en disciplinas infantiles a personas mayores de 16 años.");
+          return;
+        }
+      }
+
+      setEnrollments(prev => ({
+        ...prev,
+        [personId]: [...(prev[personId] || []), { serviceId, tierIdx: 0 }]
+      }));
     } else {
-      const famMember = family.find(f => f.id === personId);
-      targetAge = famMember?.age || 0;
+      setEnrollments(prev => ({
+        ...prev,
+        [personId]: (prev[personId] || []).filter(en => en.serviceId !== serviceId)
+      }));
     }
-
-    if (targetAge > 16) {
-      const nameLower = selectedService.name.toLowerCase();
-      if (nameLower.includes('kids') || nameLower.includes('infantil') || nameLower.includes('niños')) {
-        alert("Regla de Cohab Tatami: No es posible inscribir en disciplinas infantiles a personas mayores de 16 años.");
-        return;
-      }
-    }
-
-    setEnrollments(prev => ({
-      ...prev,
-      [personId]: {
-        ...prev[personId],
-        serviceId,
-        tierIdx: 0
-      }
-    }));
   };
 
-  const handleTierChange = (personId, tierIdx) => {
+  const handleTierChange = (personId, serviceId, tierIdx) => {
     setEnrollments(prev => ({
       ...prev,
-      [personId]: {
-        ...prev[personId],
-        tierIdx: parseInt(tierIdx, 10)
-      }
+      [personId]: (prev[personId] || []).map(en => 
+        en.serviceId === serviceId ? { ...en, tierIdx: parseInt(tierIdx, 10) } : en
+      )
     }));
   };
 
   const validateWaiversBeforeAction = () => {
-    const activeEnrollments = Object.keys(enrollments).filter(pId => enrollments[pId]?.enabled);
+    const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
     
-    for (const pId of activeEnrollments) {
+    for (const pId of activePeople) {
       if (pId === 'main') {
         if (!profile?.waiver_signed) {
           const mainWaiver = signedWaivers.main;
@@ -409,12 +405,11 @@ export default function Profile() {
       // Simular tiempo de carga de pasarela de pago
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const activeEnrollments = Object.keys(enrollments).filter(pId => enrollments[pId]?.enabled);
+      const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
       
-      for (const personId of activeEnrollments) {
+      for (const personId of activePeople) {
         const pId = personId === 'main' ? profile.id : personId;
-        const enrollment = enrollments[personId];
-        const currentServiceId = enrollment.serviceId || services[0]?.id;
+        const personServices = enrollments[personId] || [];
         
         // 0. Guardar exenciones médicas firmadas en Supabase antes de activar membresías
         const isAlreadySigned = personId === 'main' ? !!profile.waiver_signed : !!(family.find(f => f.id === personId)?.waiver_signed);
@@ -432,20 +427,22 @@ export default function Profile() {
           .update({ status: 'activo' })
           .eq('id', pId);
 
-        // 2. Crear suscripción
+        // 2. Crear suscripciones para cada servicio seleccionado
         const startDate = new Date();
         const endDate = new Date();
         endDate.setMonth(endDate.getMonth() + prepayPeriod);
 
-        await supabase
-          .from('cohab_subscriptions')
-          .insert([{
-            profile_id: pId,
-            service_id: currentServiceId,
-            status: 'active',
-            start_date: startDate.toISOString().split('T')[0],
-            end_date: endDate.toISOString().split('T')[0]
-          }]);
+        for (const entry of personServices) {
+          await supabase
+            .from('cohab_subscriptions')
+            .insert([{
+              profile_id: pId,
+              service_id: entry.serviceId,
+              status: 'active',
+              start_date: startDate.toISOString().split('T')[0],
+              end_date: endDate.toISOString().split('T')[0]
+            }]);
+        }
       }
 
       // 3. Registrar pago único global aprobado
@@ -1081,7 +1078,7 @@ export default function Profile() {
                 {/* STEP 1: ASIGNACIÓN DE SERVICIOS */}
                 <div className="glass-panel" style={{ padding: '16px', marginBottom: '20px', background: 'rgba(0,0,0,0.2)' }}>
                   <h4 style={{ color: 'white', margin: '0 0 15px 0', fontFamily: 'var(--font-display)', fontSize: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                    👤 1. Asignar Disciplinas
+                    👤 1. Asignar Servicio
                   </h4>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -1126,86 +1123,58 @@ export default function Profile() {
                             <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>A mí mismo</div>
                           </div>
                         </div>
-                        {profile?.status === 'activo' ? (
+                        {profile?.status === 'activo' && (
                           <div style={{ color: '#10B981', fontWeight: 900, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.15)' }}>
                             <span>AL DÍA</span>
                             <span style={{ fontSize: '0.9rem' }}>✓</span>
                           </div>
-                        ) : (
-                          <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={enrollments.main?.enabled || false}
-                              onChange={() => handleToggleEnrollment('main')}
-                              style={{ display: 'none' }}
-                            />
-                            <div style={{
-                              width: '40px',
-                              height: '22px',
-                              borderRadius: '11px',
-                              background: enrollments.main?.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
-                              position: 'relative',
-                              transition: 'all 0.3s'
-                            }}>
-                              <div style={{
-                                width: '18px',
-                                height: '18px',
-                                borderRadius: '50%',
-                                background: '#060B18',
-                                position: 'absolute',
-                                top: '2px',
-                                left: enrollments.main?.enabled ? '20px' : '2px',
-                                transition: 'all 0.3s'
-                              }} />
-                            </div>
-                          </label>
                         )}
                       </div>
 
-                      {enrollments.main?.enabled && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
-                          <select 
-                            className="form-input" 
-                            style={{ height: '36px', fontSize: '0.82rem', background: 'var(--bg-elevated)', color: 'white' }}
-                            value={enrollments.main.serviceId || services[0]?.id || ''}
-                            onChange={e => handleServiceSelectSafe('main', e.target.value)}
-                          >
-                            {services
-                              .filter(s => {
-                                const isOver16 = (profile?.age || 0) > 16;
-                                if (isOver16) {
-                                  const nameLower = s.name.toLowerCase();
-                                  return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
-                                }
-                                return true;
-                              })
-                              .map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                              ))
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
+                        {services
+                          .filter(s => {
+                            const isOver16 = (profile?.age || 0) > 16;
+                            if (isOver16) {
+                              const nameLower = s.name.toLowerCase();
+                              return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
                             }
-                          </select>
-                          
-                          {(() => {
-                            const selectedService = services.find(s => s.id === (enrollments.main.serviceId || services[0]?.id));
-                            if (selectedService?.pricing_tiers && selectedService.pricing_tiers.length > 0) {
-                              return (
-                                <select 
-                                  className="form-input"
-                                  style={{ height: '36px', fontSize: '0.82rem', background: 'var(--bg-elevated)', color: 'white' }}
-                                  value={enrollments.main.tierIdx}
-                                  onChange={e => handleTierChange('main', e.target.value)}
-                                >
-                                  {selectedService.pricing_tiers.map((t, idx) => (
-                                    <option key={idx} value={idx}>{t.name} - {formats.format(t.price)}/mes</option>
-                                  ))}
-                                </select>
-                              );
-                            }
-                            return null;
-                          })()}
+                            return true;
+                          })
+                          .map(s => {
+                            const isSelected = (enrollments.main || []).some(en => en.serviceId === s.id);
+                            const currentEnrollment = (enrollments.main || []).find(en => en.serviceId === s.id);
+                            
+                            return (
+                              <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px', border: isSelected ? '1px solid var(--aurora)' : '1px solid transparent' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => handleToggleService('main', s.id, e.target.checked)}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                  />
+                                  <span style={{ color: 'white', fontSize: '0.85rem' }}>{s.name}</span>
+                                </label>
+                                
+                                {isSelected && s.pricing_tiers && s.pricing_tiers.length > 0 && (
+                                  <select 
+                                    className="form-input"
+                                    style={{ height: '32px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.2)', color: 'var(--text-light)', border: '1px solid rgba(255,255,255,0.1)', marginLeft: '26px', width: 'calc(100% - 26px)' }}
+                                    value={currentEnrollment?.tierIdx || 0}
+                                    onChange={e => handleTierChange('main', s.id, e.target.value)}
+                                  >
+                                    {s.pricing_tiers.map((t, idx) => (
+                                      <option key={idx} value={idx}>{t.name} - {formats.format(t.price)}/mes</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            );
+                          })}
 
                           {/* Lógica de Firma Condicional para el Titular */}
-                          {(!profile?.waiver_signed) && (
+                          {(((enrollments.main || []).length > 0) && !profile?.waiver_signed) && (
                             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
                               <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención (Tutor)</h5>
                               <div style={{ marginBottom: '10px' }}>
@@ -1260,7 +1229,6 @@ export default function Profile() {
 
                     {/* Miembros Familiares */}
                     {family.map(m => {
-                      const entry = enrollments[m.id] || { enabled: false, serviceId: services[0]?.id || '', tierIdx: 0 };
                       const isMemberActive = m.status === 'activo';
                       return (
                         <div key={m.id} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px' }}>
@@ -1302,86 +1270,59 @@ export default function Profile() {
                                 <div style={{ color: '#10B981', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>Familiar ({m.relationship})</div>
                               </div>
                             </div>
-                            {isMemberActive ? (
+                            {isMemberActive && (
                               <div style={{ color: '#10B981', fontWeight: 900, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.15)' }}>
                                 <span>AL DÍA</span>
                                 <span style={{ fontSize: '0.9rem' }}>✓</span>
                               </div>
-                            ) : (
-                              <label className="switch-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={entry.enabled}
-                                  onChange={() => handleToggleEnrollment(m.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <div style={{
-                                  width: '40px',
-                                  height: '22px',
-                                  borderRadius: '11px',
-                                  background: entry.enabled ? 'var(--aurora)' : 'rgba(255,255,255,0.1)',
-                                  position: 'relative',
-                                  transition: 'all 0.3s'
-                                }}>
-                                  <div style={{
-                                    width: '18px',
-                                    height: '18px',
-                                    borderRadius: '50%',
-                                    background: '#060B18',
-                                    position: 'absolute',
-                                    top: '2px',
-                                    left: entry.enabled ? '20px' : '2px',
-                                    transition: 'all 0.3s'
-                                  }} />
-                                </div>
-                              </label>
                             )}
                           </div>
 
-                          {entry.enabled && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
-                              <select 
-                                className="form-input" 
-                                style={{ height: '36px', fontSize: '0.82rem', background: 'var(--bg-elevated)', color: 'white' }}
-                                value={entry.serviceId || services[0]?.id || ''}
-                                onChange={e => handleServiceSelectSafe(m.id, e.target.value)}
-                              >
-                                {services
-                                  .filter(s => {
-                                    const isOver16 = (m.age || 0) > 16;
-                                    if (isOver16) {
-                                      const nameLower = s.name.toLowerCase();
-                                      return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
-                                    }
-                                    return true;
-                                  })
-                                  .map(s => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                  ))
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
+                            {services
+                              .filter(s => {
+                                const isOver16 = (m.age || 0) > 16;
+                                if (isOver16) {
+                                  const nameLower = s.name.toLowerCase();
+                                  return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
                                 }
-                              </select>
-                              
-                              {(() => {
-                                const selectedService = services.find(s => s.id === (entry.serviceId || services[0]?.id));
-                                if (selectedService?.pricing_tiers && selectedService.pricing_tiers.length > 0) {
-                                  return (
-                                    <select 
-                                      className="form-input"
-                                      style={{ height: '36px', fontSize: '0.82rem', background: 'var(--bg-elevated)', color: 'white' }}
-                                      value={entry.tierIdx}
-                                      onChange={e => handleTierChange(m.id, e.target.value)}
-                                    >
-                                      {selectedService.pricing_tiers.map((t, idx) => (
-                                        <option key={idx} value={idx}>{t.name} - {formats.format(t.price)}/mes</option>
-                                      ))}
-                                    </select>
-                                  );
-                                }
-                                return null;
-                              })()}
+                                return true;
+                              })
+                              .map(s => {
+                                const personEnrollments = enrollments[m.id] || [];
+                                const isSelected = personEnrollments.some(en => en.serviceId === s.id);
+                                const currentEnrollment = personEnrollments.find(en => en.serviceId === s.id);
+                                
+                                return (
+                                  <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px', border: isSelected ? '1px solid var(--aurora)' : '1px solid transparent' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                      <input 
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => handleToggleService(m.id, s.id, e.target.checked)}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                      />
+                                      <span style={{ color: 'white', fontSize: '0.85rem' }}>{s.name}</span>
+                                    </label>
+                                    
+                                    {isSelected && s.pricing_tiers && s.pricing_tiers.length > 0 && (
+                                      <select 
+                                        className="form-input"
+                                        style={{ height: '32px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.2)', color: 'var(--text-light)', border: '1px solid rgba(255,255,255,0.1)', marginLeft: '26px', width: 'calc(100% - 26px)' }}
+                                        value={currentEnrollment?.tierIdx || 0}
+                                        onChange={e => handleTierChange(m.id, s.id, e.target.value)}
+                                      >
+                                        {s.pricing_tiers.map((t, idx) => (
+                                          <option key={idx} value={idx}>{t.name} - {formats.format(t.price)}/mes</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                );
+                              })}
 
                               {/* Lógica de Firma Condicional para el Familiar */}
-                              {(!m.waiver_signed) && (
+                              {(((enrollments[m.id] || []).length > 0) && !m.waiver_signed) && (
                                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
                                   <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención ({m.name})</h5>
                                   <div style={{ marginBottom: '10px' }}>
