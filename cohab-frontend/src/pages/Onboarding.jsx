@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 export default function Onboarding() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState(profile?.name || '');
@@ -46,6 +46,8 @@ export default function Onboarding() {
         .eq('id', user.id);
 
       if (updateError) throw updateError;
+      // Refrescar el perfil en el contexto local antes de navegar
+      if (refreshProfile) await refreshProfile();
       
       // Redirigir al dashboard directamente
       navigate('/dashboard');
