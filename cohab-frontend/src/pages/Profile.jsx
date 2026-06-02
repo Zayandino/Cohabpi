@@ -56,6 +56,7 @@ export default function Profile() {
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [enrollments, setEnrollments] = useState({});
+  const [activeSubscriptions, setActiveSubscriptions] = useState([]);
   const [prepayPeriod, setPrepayPeriod] = useState(1); // 1, 3, 6, 12 months
   const [paymentMethod, setPaymentMethod] = useState('debito'); // 'debito' or 'credito'
   const [installments, setInstallments] = useState(0); // 0, 3, 6, 12 cuotas
@@ -217,6 +218,7 @@ export default function Profile() {
             .in('profile_id', personIds)
             .eq('status', 'active');
           activeSubs = subsData || [];
+          setActiveSubscriptions(activeSubs);
         } catch (subsErr) {
           console.warn("No se pudieron cargar suscripciones activas:", subsErr);
         }
@@ -292,6 +294,7 @@ export default function Profile() {
   const calculateTotal = () => {
     let subtotal = 0;
     let peopleWithServicesCount = 0;
+    let billableServicesCount = 0;
     
     Object.keys(enrollments).forEach(personId => {
       const personServices = enrollments[personId] || [];
@@ -300,8 +303,17 @@ export default function Profile() {
       }
       
       personServices.forEach(entry => {
+        // Check if this specific service for this person is already active
+        const isAlreadyActive = activeSubscriptions.some(
+          sub => sub.profile_id === personId && sub.service_id === entry.serviceId
+        );
+
+        if (!isAlreadyActive) {
+          billableServicesCount++;
+        }
+
         const service = services.find(s => s.id === entry.serviceId);
-        if (service) {
+        if (service && !isAlreadyActive) {
           const hasTiers = service.pricing_tiers && service.pricing_tiers.length > 0;
           let basePrice = 0;
           if (hasTiers) {
@@ -336,7 +348,7 @@ export default function Profile() {
 
     return {
       subtotal,
-      activeEnrollmentsCount: peopleWithServicesCount,
+      activeEnrollmentsCount: billableServicesCount,
       isFamilyDiscountApplicable,
       familyDiscountAmount,
       monthlyTotalAfterFamilyDiscount,
@@ -414,6 +426,36 @@ export default function Profile() {
     return true;
   };
 
+  const handleSaveWaiversOnly = async () => {
+    setIsProcessing(true);
+    try {
+      if (!validateWaiversBeforeAction()) {
+        setIsProcessing(false);
+        return;
+      }
+      
+      const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
+      for (const personId of activePeople) {
+        const pId = personId === 'main' ? profile.id : personId;
+        const isAlreadySigned = personId === 'main' ? !!profile.waiver_signed : !!(family.find(f => f.id === personId)?.waiver_signed);
+        
+        if (!isAlreadySigned) {
+          const w = personId === 'main' ? signedWaivers.main : signedWaivers[personId];
+          if (w?.health && w?.waiver) {
+             await supabase.from('cohab_profiles').update({ waiver_signed: true }).eq('id', pId);
+          }
+        }
+      }
+      alert("Requisitos de salud guardados correctamente.");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar requisitos.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleProcessPayment = async () => {
     setIsProcessing(true);
     const totals = calculateTotal();
@@ -440,6 +482,20 @@ export default function Profile() {
       }
 
       // 1. Crear la sesión del carrito en Supabase localmente (tabla cohab_checkout_sessions)
+      // FILTRO DE SEGURIDAD: Solo enviar al carrito las disciplinas que se están cobrando (no activas)
+      const billableEnrollments = {};
+      Object.keys(enrollments).forEach(pId => {
+        const personServices = enrollments[pId] || [];
+        const filteredServices = personServices.filter(entry => {
+           return !activeSubscriptions.some(
+             sub => sub.profile_id === pId && sub.service_id === entry.serviceId
+           );
+        });
+        if (filteredServices.length > 0) {
+           billableEnrollments[pId] = filteredServices;
+        }
+      });
+
       const { data: sessionData, error: sessionError } = await supabase
         .from('cohab_checkout_sessions')
         .insert([{
@@ -448,7 +504,7 @@ export default function Profile() {
           status: 'pending',
           cart_data: {
             months: prepayPeriod,
-            enrollments: enrollments
+            enrollments: billableEnrollments
           }
         }])
         .select('id')
@@ -1644,7 +1700,52 @@ export default function Profile() {
                       ) : (
                         (() => {
                           const hasAnyActiveMember = profile?.status === 'activo' || family.some(m => m.status === 'activo');
+                          
                           if (hasAnyActiveMember) {
+                            const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
+                            let missingWaivers = false;
+                            for (const pId of activePeople) {
+                              if (pId === 'main' && !profile?.waiver_signed) missingWaivers = true;
+                              if (pId !== 'main') {
+                                const f = family.find(fam => fam.id === pId);
+                                if (f && !f.waiver_signed) missingWaivers = true;
+                              }
+                            }
+
+                            if (missingWaivers) {
+                              return (
+                                <div style={{ textAlign: 'center', padding: '20px 10px', background: 'rgba(245, 158, 11, 0.04)', border: '1px dashed rgba(245, 158, 11, 0.2)', borderRadius: '8px' }}>
+                                  <span style={{ fontSize: '1.6rem' }}>⚠️</span>
+                                  <p style={{ color: '#F59E0B', fontSize: '0.85rem', fontWeight: 800, margin: '8px 0 4px 0' }}>
+                                    ¡Falta firmar tus Requisitos de Salud!
+                                  </p>
+                                  <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.4, margin: '0 0 16px 0' }}>
+                                    Tus membresías están al día, pero debes firmar la ficha de salud y el descargo de responsabilidad (paso 1 arriba) para poder entrenar.
+                                  </p>
+                                  <button
+                                    onClick={handleSaveWaiversOnly}
+                                    disabled={isProcessing}
+                                    className="auth-btn"
+                                    style={{
+                                      width: '100%',
+                                      height: '46px',
+                                      background: 'rgba(245, 158, 11, 0.1)',
+                                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                                      color: '#F59E0B',
+                                      fontWeight: 900,
+                                      fontSize: '0.85rem',
+                                      letterSpacing: '1px',
+                                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                      borderRadius: '8px',
+                                      margin: 0
+                                    }}
+                                  >
+                                    {isProcessing ? 'Guardando...' : 'GUARDAR REQUISITOS DE SALUD'}
+                                  </button>
+                                </div>
+                              );
+                            }
+
                             return (
                               <div style={{ textAlign: 'center', padding: '20px 10px', background: 'rgba(16, 185, 129, 0.04)', border: '1px dashed rgba(16, 185, 129, 0.2)', borderRadius: '8px' }}>
                                 <span style={{ fontSize: '1.6rem' }}>🏆</span>
@@ -1713,34 +1814,6 @@ export default function Profile() {
               </div>
             )}
           </div>
-        )}
-
-        {/* Ficha de Salud - Inteligente por Edad */}
-        {(getPersonAge(profile) > 0 || profile?.birthdate) && (
-          <a 
-            href={getPersonAge(profile) >= 18 
-              ? "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1" 
-              : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1&entry.12345=MenorDeEdad" /* Se simula el formulario infantil */
-            } 
-            target="_blank" 
-            rel="noreferrer" 
-            style={{textDecoration:'none'}}
-          >
-            <div className="mp-card" style={{marginTop:'25px', marginBottom:'25px', background: 'linear-gradient(135deg, rgba(10, 17, 40, 0.8), rgba(6, 11, 24, 0.9))', border: '1px solid var(--border-glass)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', textAlign: 'left', padding: '20px', display:'flex', alignItems:'center', gap: '18px'}}>
-              <div style={{fontSize: '2.5rem', filter: 'drop-shadow(0 4px 10px rgba(52, 211, 153, 0.3))'}}>🏥</div>
-              <div>
-                <h3 style={{fontFamily:'var(--font-display)', fontSize:'1.15rem', fontWeight:800, color:'var(--text-white)', marginBottom:'4px', marginTop:0}}>
-                  {getPersonAge(profile) >= 18 ? "Ficha de Salud Obligatoria (Adulto)" : "Ficha de Salud Obligatoria (Menores de Edad)"}
-                </h3>
-                <p style={{fontSize:'0.8rem', color:'var(--text-muted)', lineHeight:1.4, margin:0}}>
-                  {getPersonAge(profile) >= 18 
-                    ? "Completar para mantener un registro médico de adulto y entrenar seguros." 
-                    : "Debe ser completada por tu apoderado para menores de 18 años."
-                  }
-                </p>
-              </div>
-            </div>
-          </a>
         )}
 
         {/* Administración del Tatami (Grid de cajas como botones) */}
