@@ -40,8 +40,8 @@ export default function Onboarding() {
           phone: phone,
           rut: rut,
           birthdate: dob,
-          role: 'miembro',
-          waiver_signed: false // Inicialmente false (se firma al contratar plan)
+          role: profile?.role || 'miembro',
+          waiver_signed: profile?.waiver_signed || false
         })
         .eq('id', user.id);
 
