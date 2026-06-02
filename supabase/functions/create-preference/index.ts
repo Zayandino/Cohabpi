@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 import { MercadoPagoConfig, Preference } from "npm:mercadopago@2.0.8"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,8 +15,104 @@ serve(async (req) => {
   try {
     const { checkout_session_id, payer_id, payer_email, total_amount, origin_url } = await req.json()
 
-    if (!checkout_session_id || !payer_id || !total_amount) {
+    if (!checkout_session_id || !payer_id || total_amount === undefined) {
       throw new Error("Missing required parameters for payment.")
+    }
+
+    if (total_amount === 0) {
+      // Process free subscription directly
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') || '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+      )
+      
+      const { data: session } = await supabaseAdmin
+        .from('cohab_checkout_sessions')
+        .select('*')
+        .eq('id', checkout_session_id)
+        .single()
+
+      if (!session || session.status === 'completed') {
+        throw new Error('Session already processed or not found')
+      }
+
+      const { payer_id: session_payer_id, cart_data } = session;
+      const { months = 1, enrollments = {} } = cart_data;
+
+      // 2. Marcar la sesión como completada
+      await supabaseAdmin
+        .from('cohab_checkout_sessions')
+        .update({ status: 'completed' })
+        .eq('id', checkout_session_id)
+
+      // 3. Registrar el pago global como beca o free
+      await supabaseAdmin
+        .from('cohab_payments')
+        .insert({
+          profile_id: session_payer_id,
+          amount: 0,
+          status: 'approved',
+          payment_method: 'beca_100',
+        })
+
+      // 4. Procesar el carrito (iterar sobre las personas y sus servicios)
+      const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
+      
+      for (const personId of activePeople) {
+        const actualPersonId = personId === 'main' ? session_payer_id : personId;
+        const personServices = enrollments[personId] || [];
+
+        // Activar el perfil
+        await supabaseAdmin
+          .from('cohab_profiles')
+          .update({ status: 'activo' })
+          .eq('id', actualPersonId);
+
+        // Activar servicios
+        for (const entry of personServices) {
+          const serviceId = entry.serviceId || entry.id;
+          
+          // Buscar si ya tiene el servicio activo
+          const { data: activeSub } = await supabaseAdmin
+            .from('cohab_subscriptions')
+            .select('*')
+            .eq('profile_id', actualPersonId)
+            .eq('service_id', serviceId)
+            .eq('status', 'active')
+            .order('end_date', { ascending: false })
+            .limit(1)
+            .single()
+
+          let newStartDate = new Date()
+          let newEndDate = new Date()
+
+          if (activeSub && new Date(activeSub.end_date) > new Date()) {
+            newStartDate = new Date(activeSub.end_date)
+            newEndDate = new Date(activeSub.end_date)
+          }
+
+          newEndDate.setMonth(newEndDate.getMonth() + months)
+
+          await supabaseAdmin
+            .from('cohab_subscriptions')
+            .insert({
+              profile_id: actualPersonId,
+              service_id: serviceId,
+              status: 'active',
+              start_date: newStartDate.toISOString().split('T')[0],
+              end_date: newEndDate.toISOString().split('T')[0]
+            })
+        }
+      }
+
+      return new Response(JSON.stringify({ 
+        free_success: true,
+        init_point: `${origin_url}/beneficios?pago=aprobado`,
+        sandbox_init_point: `${origin_url}/beneficios?pago=aprobado`
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
     }
 
     const client = new MercadoPagoConfig({

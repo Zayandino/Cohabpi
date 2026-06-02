@@ -65,6 +65,22 @@ export default function Profile() {
   const [discounts, setDiscounts] = useState([]);
   const [signedWaivers, setSignedWaivers] = useState({});
 
+  const getPersonAge = (person) => {
+    if (!person) return 0;
+    if (person.age && person.age > 0) return person.age;
+    if (person.birthdate) {
+      const today = new Date();
+      const birthDate = new Date(person.birthdate);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+      }
+      return age;
+    }
+    return 0;
+  };
+
   const handleStartEditFamily = (member) => {
     setEditingMemberId(member.id);
     setEditName(member.name || member.full_name || '');
@@ -163,6 +179,7 @@ export default function Profile() {
         const { data: servicesData, error: servicesError } = await supabase
           .from('cohab_services')
           .select('*')
+          .eq('is_active', true)
           .order('name', { ascending: true });
           
         if (servicesError) throw servicesError;
@@ -234,11 +251,11 @@ export default function Profile() {
           }
         };
 
-        initial.main = populateInitial(profile.id, profile?.age || 0, true);
+        initial.main = populateInitial(profile.id, getPersonAge(profile), true);
         
         if (family && family.length > 0) {
           family.forEach(m => {
-            initial[m.id] = populateInitial(m.id, m.age || 0, false);
+            initial[m.id] = populateInitial(m.id, getPersonAge(m), false);
           });
         }
         setEnrollments(initial);
@@ -1141,7 +1158,7 @@ export default function Profile() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
                         {services
                           .filter(s => {
-                            const isOver16 = (profile?.age || 0) > 16;
+                            const isOver16 = getPersonAge(profile) > 16;
                             if (isOver16) {
                               const nameLower = s.name.toLowerCase();
                               return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
@@ -1186,7 +1203,7 @@ export default function Profile() {
                               <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención (Tutor)</h5>
                               <div style={{ marginBottom: '10px' }}>
                                 <a 
-                                  href={(profile?.age || 30) < 18 
+                                  href={getPersonAge(profile) < 18 
                                     ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
                                     : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
                                   } 
@@ -1287,7 +1304,7 @@ export default function Profile() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
                             {services
                               .filter(s => {
-                                const isOver16 = (m.age || 0) > 16;
+                                const isOver16 = getPersonAge(m) > 16;
                                 if (isOver16) {
                                   const nameLower = s.name.toLowerCase();
                                   return !nameLower.includes('kids') && !nameLower.includes('infantil') && !nameLower.includes('niños');
@@ -1333,7 +1350,7 @@ export default function Profile() {
                                   <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención ({m.name})</h5>
                                   <div style={{ marginBottom: '10px' }}>
                                     <a 
-                                      href={(m.age || 10) < 18 
+                                      href={getPersonAge(m) < 18 
                                         ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
                                         : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
                                       } 
@@ -1699,9 +1716,9 @@ export default function Profile() {
         )}
 
         {/* Ficha de Salud - Inteligente por Edad */}
-        {profile?.age && (
+        {(getPersonAge(profile) > 0 || profile?.birthdate) && (
           <a 
-            href={profile.age >= 18 
+            href={getPersonAge(profile) >= 18 
               ? "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1" 
               : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1&entry.12345=MenorDeEdad" /* Se simula el formulario infantil */
             } 
@@ -1713,10 +1730,10 @@ export default function Profile() {
               <div style={{fontSize: '2.5rem', filter: 'drop-shadow(0 4px 10px rgba(52, 211, 153, 0.3))'}}>🏥</div>
               <div>
                 <h3 style={{fontFamily:'var(--font-display)', fontSize:'1.15rem', fontWeight:800, color:'var(--text-white)', marginBottom:'4px', marginTop:0}}>
-                  {profile.age >= 18 ? "Ficha de Salud Obligatoria (Adulto)" : "Ficha de Salud Obligatoria (Menores de Edad)"}
+                  {getPersonAge(profile) >= 18 ? "Ficha de Salud Obligatoria (Adulto)" : "Ficha de Salud Obligatoria (Menores de Edad)"}
                 </h3>
                 <p style={{fontSize:'0.8rem', color:'var(--text-muted)', lineHeight:1.4, margin:0}}>
-                  {profile.age >= 18 
+                  {getPersonAge(profile) >= 18 
                     ? "Completar para mantener un registro médico de adulto y entrenar seguros." 
                     : "Debe ser completada por tu apoderado para menores de 18 años."
                   }

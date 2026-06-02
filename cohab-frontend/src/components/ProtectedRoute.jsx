@@ -14,10 +14,13 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
     return <Navigate to="/login" replace />;
   }
 
-  // Usuario autenticado pero con perfil incompleto (onboarding pendiente).
-  // El trigger handle_new_user() crea el perfil sin teléfono → redirigir a onboarding.
+  // Usuario autenticado pero con perfil incompleto (onboarding pendiente o sin nombre).
+  // O usuarios afectados por el bug de fecha de nacimiento (fecha de registro).
   // Solo aplica si NO estamos ya en /onboarding para evitar loops.
-  if (profile && !profile.phone && location.pathname !== '/onboarding') {
+  const isBirthdateBugged = profile?.birthdate && profile?.created_at && 
+    (profile.birthdate === profile.created_at.substring(0, 10));
+
+  if (profile && (!profile.phone || !profile.name || !profile.birthdate || isBirthdateBugged) && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
 

@@ -19,7 +19,9 @@
       "Bash(timeout 8 npx vite build --mode development)",
       "Bash(start http://localhost:5175/login)",
       "Bash(timeout 15 npx vite build --mode development)",
-      "Bash(npx @playwright/mcp@latest --version)"
+      "Bash(npx @playwright/mcp@latest --version)",
+      "Bash(ssh dokploy *)",
+      "Bash(scp \"c:/Users/eduar/Cohabpi/supabase/functions/create-preference/index.ts\" \"dokploy:/etc/dokploy/compose/cohab-los-andes-supabase-dww5gh/files/volumes/functions/create-preference/index.ts\")"
     ]
   }
 }

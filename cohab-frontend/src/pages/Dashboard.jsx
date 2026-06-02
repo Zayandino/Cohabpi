@@ -220,7 +220,7 @@ export default function Dashboard() {
           <div className="greeting-hello">Bienvenido de vuelta</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
             <div className="greeting-name" style={{ marginBottom: 0 }}>
-              <span id="user-display-name">{profile?.name || 'Cargando...'}</span>
+              <span id="user-display-name">{profile ? (profile.name || 'Alumno') : 'Cargando...'}</span>
             </div>
             {profile?.role === 'admin' && (
               <span id="admin-badge" className="admin-badge" style={{ display: 'inline-block' }}>ADMIN</span>

@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 export default function Onboarding() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
-  const [phone, setPhone] = useState('');
-  const [rut, setRut] = useState('');
-  const [dob, setDob] = useState('');
+  const [name, setName] = useState(profile?.name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
+  const [rut, setRut] = useState(profile?.rut || '');
+  const [dob, setDob] = useState(profile?.birthdate || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (profile) {
+      if (profile.name) setName(profile.name);
+      if (profile.phone) setPhone(profile.phone);
+      if (profile.rut) setRut(profile.rut);
+      
+      const isBirthdateBugged = profile.birthdate && profile.created_at && profile.birthdate === profile.created_at.substring(0, 10);
+      if (profile.birthdate && !isBirthdateBugged) {
+        setDob(profile.birthdate);
+      }
+    }
+  }, [profile]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,6 +36,7 @@ export default function Onboarding() {
       const { error: updateError } = await supabase
         .from('cohab_profiles')
         .update({
+          name: name,
           phone: phone,
           rut: rut,
           birthdate: dob,
@@ -52,6 +67,11 @@ export default function Onboarding() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
+            <label className="form-label">Nombre Completo</label>
+            <input type="text" className="form-input" placeholder="Ej. Juan Pérez" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Tu Teléfono</label>
             <input type="tel" className="form-input" placeholder="+56 9..." value={phone} onChange={(e) => setPhone(e.target.value)} required />
           </div>
@@ -63,7 +83,14 @@ export default function Onboarding() {
 
           <div className="form-group">
             <label className="form-label">Fecha de Nacimiento</label>
-            <input type="date" className="form-input" value={dob} onChange={(e) => setDob(e.target.value)} required />
+            <input 
+              type="date" 
+              className="form-input" 
+              value={dob} 
+              onChange={(e) => setDob(e.target.value)} 
+              max={new Date(new Date().setFullYear(new Date().getFullYear() - 16)).toISOString().split('T')[0]}
+              required 
+            />
           </div>
 
           {error && <p style={{color: '#FF6B6B', fontSize: '0.85rem', marginBottom: '15px'}}>{error}</p>}

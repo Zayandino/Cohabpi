@@ -13,16 +13,36 @@ export default function BottomNav() {
   const isActive = (path) => currentPath === path ? 'active' : '';
 
   const iconStyle = { display: 'block', margin: '0 auto', stroke: 'white', opacity: 0.8 };
+  
+  const hasAccess = profile?.status === 'activo';
 
   return (
     <nav className="bottom-nav" id="bottom-nav" style={{ zIndex: 100 }}>
       
-      <Link to="/videos" className={`nav-tab ${isActive('/videos')}`} style={{ textDecoration: 'none' }} aria-label="Academia">
-        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24" style={iconStyle}>
-          <polygon points="23 7 16 12 23 17 23 7" />
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-        </svg>
-        <span className="nav-tab-label" style={{ color: 'white' }}>Academia</span>
+      <Link 
+        to={hasAccess ? "/videos" : "#"} 
+        onClick={(e) => {
+          if (!hasAccess) {
+            e.preventDefault();
+            alert('Debes habilitar un servicio para utilizar la academia.');
+          }
+        }}
+        className={`nav-tab ${hasAccess && isActive('/videos')}`} 
+        style={{ textDecoration: 'none', opacity: hasAccess ? 1 : 0.6 }} 
+        aria-label="Academia"
+      >
+        {hasAccess ? (
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24" style={iconStyle}>
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24" style={{...iconStyle, stroke: '#FF4D4D', opacity: 1}}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        )}
+        <span className="nav-tab-label" style={{ color: hasAccess ? 'white' : '#FF4D4D' }}>Academia</span>
       </Link>
 
       <Link to="/novedades" className={`nav-tab ${isActive('/novedades')}`} style={{ textDecoration: 'none' }} aria-label="Noticias">
