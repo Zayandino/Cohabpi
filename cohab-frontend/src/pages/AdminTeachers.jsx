@@ -45,7 +45,7 @@ export default function AdminTeachers() {
       const { data, error } = await supabase
         .from('cohab_profiles')
         .select('id, name, email')
-        .eq('role', 'student')
+        .in('role', ['student', 'miembro'])
         .order('name', { ascending: true });
         
       if (error) throw error;
