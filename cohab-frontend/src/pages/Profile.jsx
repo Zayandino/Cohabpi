@@ -525,8 +525,23 @@ export default function Profile() {
         }
       });
 
-      if (error || data?.error) {
-        throw new Error(error?.message || data?.error || "Error al generar link de pago");
+      if (error) {
+        // Extraer el mensaje real devuelto por la Edge Function si existe
+        let errorMessage = error.message;
+        if (error.context && error.context.json && error.context.json.error) {
+          errorMessage = error.context.json.error;
+        } else if (error.context && typeof error.context.text === 'function') {
+          try {
+             const textBody = await error.context.text();
+             const jsonBody = JSON.parse(textBody);
+             if (jsonBody.error) errorMessage = jsonBody.error;
+          } catch (e) { /* ignore */ }
+        }
+        throw new Error(errorMessage || "Error al generar link de pago");
+      }
+      
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       // 3. Redirigir al usuario a Mercado Pago
@@ -1865,7 +1880,7 @@ export default function Profile() {
                 <div style={{ color: 'white', fontWeight: 800, fontSize: '0.85rem' }}>Staff/Profesores</div>
               </button>
 
-              <button 
+              {/* <button 
                 className="glass-panel" 
                 onClick={() => alert("Función Escanear QR en desarrollo.")}
                 style={{ 
@@ -1884,7 +1899,7 @@ export default function Profile() {
               >
                 <QrCode size={28} color="var(--aurora)" style={{ marginBottom: '8px' }} />
                 <div style={{ color: 'white', fontWeight: 800, fontSize: '0.85rem' }}>Escanear QR</div>
-              </button>
+              </button> */}
 
               <button 
                 className="glass-panel" 
