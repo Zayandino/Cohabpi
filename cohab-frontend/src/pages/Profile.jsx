@@ -545,8 +545,8 @@ export default function Profile() {
       }
 
       // 3. Redirigir al usuario a Mercado Pago
-      // Nota: init_point es producción, sandbox_init_point es para pruebas
-      const urlToRedirect = data?.sandbox_init_point || data?.init_point;
+      // Usar siempre init_point para producción.
+      const urlToRedirect = data?.init_point;
       if (urlToRedirect) {
         window.location.href = urlToRedirect;
       } else {
