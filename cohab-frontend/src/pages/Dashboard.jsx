@@ -1,11 +1,43 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+
+
+const PAYMENT_BANNERS = {
+  aprobado: {
+    emoji: '🎉',
+    title: '¡Pago aprobado!',
+    msg: 'Tu membresía fue activada correctamente. Ya puedes entrenar.',
+    bg: 'rgba(16, 185, 129, 0.12)',
+    border: 'rgba(16, 185, 129, 0.35)',
+    color: '#34D399',
+  },
+  rechazado: {
+    emoji: '❌',
+    title: 'Pago rechazado',
+    msg: 'El pago no fue procesado. Verifica tus datos de pago e intenta de nuevo.',
+    bg: 'rgba(239, 68, 68, 0.10)',
+    border: 'rgba(239, 68, 68, 0.3)',
+    color: '#EF4444',
+  },
+  pendiente: {
+    emoji: '⏳',
+    title: 'Pago en revisión',
+    msg: 'Tu pago está siendo procesado. Te notificaremos cuando se confirme.',
+    bg: 'rgba(245, 158, 11, 0.10)',
+    border: 'rgba(245, 158, 11, 0.3)',
+    color: '#F59E0B',
+  },
+};
 
 export default function Dashboard() {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pagoStatus = searchParams.get('pago');
+  const paymentBanner = PAYMENT_BANNERS[pagoStatus] || null;
+
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [hasActiveMembership, setHasActiveMembership] = useState(false);
   const [familyProfiles, setFamilyProfiles] = useState([]);
@@ -215,6 +247,28 @@ export default function Dashboard() {
       </header>
 
       <div className="content">
+
+        {/* ── BANNER DE RESULTADO DE PAGO ── */}
+        {paymentBanner && (
+          <div style={{
+            background: paymentBanner.bg,
+            border: `1px solid ${paymentBanner.border}`,
+            borderRadius: '14px',
+            padding: '20px 20px 18px',
+            marginBottom: '24px',
+            textAlign: 'center',
+            animation: 'fadeIn 0.4s ease-out',
+          }}>
+            <div style={{ fontSize: '2.2rem', marginBottom: '8px' }}>{paymentBanner.emoji}</div>
+            <h3 style={{ color: 'white', fontFamily: 'var(--font-display)', fontSize: '1.1rem', margin: '0 0 6px 0' }}>
+              {paymentBanner.title}
+            </h3>
+            <p style={{ color: paymentBanner.color, fontSize: '0.82rem', margin: 0, lineHeight: 1.5 }}>
+              {paymentBanner.msg}
+            </p>
+          </div>
+        )}
+
         {/* Greeting IDÉNTICO AL ORIGINAL */}
         <div className="greeting-block">
           <div className="greeting-hello">Bienvenido de vuelta</div>

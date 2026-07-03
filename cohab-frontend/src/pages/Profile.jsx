@@ -260,7 +260,19 @@ export default function Profile() {
             initial[m.id] = populateInitial(m.id, getPersonAge(m), false);
           });
         }
-        setEnrollments(initial);
+        setEnrollments(prev => {
+          const updated = { ...prev };
+          let changed = false;
+          Object.keys(initial).forEach(pId => {
+            if (!updated[pId]) {
+              updated[pId] = initial[pId];
+              changed = true;
+            }
+          });
+          // Also set it if prev was completely empty
+          if (Object.keys(prev).length === 0) return initial;
+          return changed ? updated : prev;
+        });
       } catch (err) {
         console.error("Error loading payments data in profile:", err);
       } finally {
@@ -324,9 +336,13 @@ export default function Profile() {
           }
 
           // Aplicar descuento de beca antes de sumarlo al subtotal familiar
+          // Solo aplica para disciplinas de BJJ
           const scholarshipPercent = getScholarshipPercentForPerson(personId);
           if (scholarshipPercent > 0) {
-            basePrice = Math.round(basePrice * (1 - scholarshipPercent / 100));
+            const isBJJService = service.name.toLowerCase().includes('bjj') || service.name.toLowerCase().includes('jiu jitsu');
+            if (isBJJService) {
+              basePrice = Math.round(basePrice * (1 - scholarshipPercent / 100));
+            }
           }
           subtotal += basePrice;
         }
@@ -1687,6 +1703,20 @@ export default function Profile() {
                             <button
                               onClick={() => {
                                 if (!validateWaiversBeforeAction()) return;
+                                
+                                const totals = calculateTotal();
+                                const activeP = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
+                                
+                                if (activeP.length === 0) {
+                                  alert("Selecciona al menos un servicio nuevo para renovar.");
+                                  return;
+                                }
+
+                                if (totals.finalTotal === 0 && totals.activeEnrollmentsCount === 0) {
+                                  alert("Los servicios seleccionados ya se encuentran activos. Selecciona un servicio nuevo o un mes adicional.");
+                                  return;
+                                }
+
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                                 setShowCheckoutModal(true);
                               }}
