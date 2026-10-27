@@ -522,7 +522,10 @@ export default function AdminDashboard() {
       setSelectedUser(prev => ({ ...prev, belt: userBelt, graus: parseInt(userGraus, 10) }));
     } catch (err) {
       console.error("Error updating user grade:", err);
-      showToast("Error al guardar grado.", 'error');
+      const msg = err?.message?.includes('JWT') || err?.message?.includes('expired')
+        ? "Tu sesión ha expirado. Por favor recarga la página o inicia sesión de nuevo."
+        : (err?.message || "Error al guardar grado.");
+      showToast(msg, 'error');
     } finally {
       setUpdatingGrade(false);
     }
