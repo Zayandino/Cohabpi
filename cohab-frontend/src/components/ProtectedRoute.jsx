@@ -6,7 +6,31 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
   const location = useLocation();
 
   if (loading) {
-    return <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>Cargando validación...</div>;
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '80vh',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        gap: '16px'
+      }}>
+        <div style={{
+          width: '50px',
+          height: '50px',
+          border: '3px solid rgba(255,255,255,0.15)',
+          borderTopColor: '#C4151C',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }} />
+        <p style={{ fontSize: '0.95rem', color: '#CBD5E1', fontWeight: 500 }}>
+          Cargando academia COHAB...
+        </p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
   }
 
   // Sin sesión → al login

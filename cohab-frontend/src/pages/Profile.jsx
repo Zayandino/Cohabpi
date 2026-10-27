@@ -1,31 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { createClient } from '@supabase/supabase-js';
 import { LogOut, ArrowLeft, Plus, Calendar, Users, QrCode, Settings, Trash2, Edit2, CreditCard, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
-
-const getSupabaseUrl = () => {
-  if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
-  if (typeof window !== 'undefined') {
-    if (window.CONFIG && window.CONFIG.SUPABASE_URL) return window.CONFIG.SUPABASE_URL;
-    if (typeof CONFIG !== 'undefined' && CONFIG.SUPABASE_URL) return CONFIG.SUPABASE_URL;
-  }
-  return 'https://api.cohablosandes.cloud';
-};
-
-const getSupabaseAnonKey = () => {
-  if (import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
-  if (typeof window !== 'undefined') {
-    if (window.CONFIG && window.CONFIG.SUPABASE_ANON_KEY) return window.CONFIG.SUPABASE_ANON_KEY;
-    if (typeof CONFIG !== 'undefined' && CONFIG.SUPABASE_ANON_KEY) return CONFIG.SUPABASE_ANON_KEY;
-  }
-  return '';
-};
-
-const tempClient = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
-  auth: { persistSession: false }
-});
 
 const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
 
