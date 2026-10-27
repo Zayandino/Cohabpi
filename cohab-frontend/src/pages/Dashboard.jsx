@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { Html5Qrcode } from 'html5-qrcode';
+import { QrCode, Camera, CheckCircle, AlertCircle, X } from 'lucide-react';
 
 
 const PAYMENT_BANNERS = {
@@ -46,6 +48,13 @@ export default function Dashboard() {
   // Servicios y suscripción activa del titular (para mostrar horario dinámico)
   const [services, setServices] = useState([]);
   const [selfActiveSub, setSelfActiveSub] = useState(null);
+
+  // Estados del Escáner QR de Asistencia
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scannerError, setScannerError] = useState(null);
+  const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState(null);
+  const scannerRef = useRef(null);
 
   // Retorna el perfil del miembro actualmente seleccionado
   const getSelectedProfile = useCallback(() => {
@@ -198,6 +207,129 @@ export default function Dashboard() {
       console.error("Error unmarking attendance:", err);
     }
   };
+
+  // Funciones para Escaneo de Código QR de Asistencia
+  const stopQrScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+        scannerRef.current.clear();
+      } catch (e) {
+        console.error("Error al detener cámara QR:", e);
+      } finally {
+        scannerRef.current = null;
+      }
+    }
+  };
+
+  const handleCloseScanner = async () => {
+    await stopQrScanner();
+    setShowScannerModal(false);
+    setScannerError(null);
+    setScanSuccess(null);
+    setScanProcessing(false);
+  };
+
+  const handleQrDecoded = async (text, inst) => {
+    try {
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {
+        setScannerError("El código QR no tiene un formato válido.");
+        return;
+      }
+
+      if (payload.app !== 'cohab_bjj' || !payload.service_id) {
+        setScannerError("Este código QR no corresponde al pase de asistencia oficial de COHAB.");
+        return;
+      }
+
+      // Detener cámara temporalmente para procesar
+      if (inst && inst.isScanning) {
+        try {
+          await inst.stop();
+        } catch (e) {}
+      }
+
+      setScanProcessing(true);
+      setScannerError(null);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase.rpc('cohab_mark_attendance_qr', {
+        p_service_id: payload.service_id,
+        p_qr_date: payload.date || todayStr,
+        p_instructor_id: payload.instructor_id || null
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setScanSuccess({
+          title: data.already_registered ? 'Asistencia ya registrada' : '¡Asistencia Confirmada! 🥋',
+          message: data.message,
+          className: data.class_name
+        });
+        
+        // Refrescar asistencias del alumno
+        fetchAttendance(profile?.id);
+
+        // Cerrar modal automáticamente después de 2.5s
+        setTimeout(() => {
+          handleCloseScanner();
+        }, 2500);
+      } else {
+        setScannerError(data?.error || 'Error al validar tu asistencia.');
+        setScanProcessing(false);
+      }
+    } catch (err) {
+      console.error("Error al procesar asistencia QR:", err);
+      setScannerError(err.message || "Error al procesar asistencia.");
+      setScanProcessing(false);
+    }
+  };
+
+  const startQrScanner = () => {
+    setScannerError(null);
+    setScanSuccess(null);
+    setScanProcessing(false);
+    setShowScannerModal(true);
+
+    // Esperar a que el modal y el elemento div 'cohab-qr-reader' existan en el DOM
+    setTimeout(async () => {
+      try {
+        await stopQrScanner();
+        const html5QrCode = new Html5Qrcode("cohab-qr-reader");
+        scannerRef.current = html5QrCode;
+
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          async (decodedText) => {
+            await handleQrDecoded(decodedText, html5QrCode);
+          },
+          () => {
+            // Frame normal sin QR detectado
+          }
+        );
+      } catch (err) {
+        console.error("Error al iniciar cámara QR:", err);
+        setScannerError("No se pudo iniciar la cámara. Por favor autoriza el permiso de cámara en tu navegador.");
+      }
+    }, 350);
+  };
+
+  // Limpiar escáner si el componente se desmonta
+  useEffect(() => {
+    return () => {
+      stopQrScanner();
+    };
+  }, []);
 
 
   // Helper: parsea texto de días en array de claves ['LUN','MAR',...]
@@ -635,14 +767,40 @@ export default function Dashboard() {
 
         {/* Attendance Card & Today Classes Schedule */}
         <div className="glass-panel" style={{ padding: '20px', marginBottom: '25px', marginTop: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <span className="metric-label" style={{ marginBottom: '2px' }}>Asistencia del Mes</span>
               <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, color: 'white', fontSize: '1.4rem', margin: 0 }}>
                 {attendanceRecords.length} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>clases</span>
               </h3>
             </div>
-            <div style={{ fontSize: '2rem' }}>📈</div>
+
+            {/* Botón para Escanear QR */}
+            <button
+              type="button"
+              onClick={startQrScanner}
+              style={{
+                background: 'linear-gradient(135deg, var(--aurora), #10B981)',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '9px 16px',
+                color: '#060B18',
+                fontWeight: 900,
+                fontSize: '0.82rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 18px rgba(52, 211, 153, 0.35)',
+                transition: 'all 0.2s',
+                letterSpacing: '0.3px',
+                textTransform: 'uppercase'
+              }}
+              id="btn-scan-qr-attendance"
+            >
+              <QrCode size={18} />
+              <span>Marcar Asistencia QR</span>
+            </button>
           </div>
 
           {/* Clases de Hoy — DINÁMICO basado en suscripción activa del titular */}
@@ -872,6 +1030,176 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* MODAL ESCÁNER QR DE ASISTENCIA */}
+      {showScannerModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(3, 7, 18, 0.95)',
+          backdropFilter: 'blur(16px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          zIndex: 9999,
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 11, 24, 0.98) 100%)',
+            border: '2px solid rgba(52, 211, 153, 0.4)',
+            borderRadius: '24px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '420px',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.8), 0 0 30px rgba(52, 211, 153, 0.2)',
+            position: 'relative'
+          }}>
+            {/* Botón Cerrar */}
+            <button
+              type="button"
+              onClick={handleCloseScanner}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Cerrar cámara"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Camera size={20} color="var(--aurora)" />
+              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, color: 'white', fontSize: '1.2rem', margin: 0 }}>
+                Escanear QR Tatami
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>
+              Apunta la cámara al código QR proyectado por el profesor para validar tu asistencia al instante.
+            </p>
+
+            {/* Contenedor del Visor HTML5 QR */}
+            <div style={{
+              background: '#000',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              position: 'relative',
+              minHeight: '260px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '2px solid rgba(52, 211, 153, 0.3)'
+            }}>
+              <div id="cohab-qr-reader" style={{ width: '100%' }}></div>
+              
+              {scanProcessing && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(3, 7, 18, 0.85)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '12px',
+                  zIndex: 10
+                }}>
+                  <div style={{ width: '36px', height: '36px', border: '3px solid rgba(52,211,153,0.3)', borderTopColor: 'var(--aurora)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <span style={{ color: 'var(--aurora)', fontWeight: 800, fontSize: '0.85rem' }}>Validando asistencia en tatami...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Éxito */}
+            {scanSuccess && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                background: 'rgba(52, 211, 153, 0.15)',
+                border: '1px solid rgba(52, 211, 153, 0.4)',
+                borderRadius: '12px',
+                animation: 'fadeIn 0.25s ease-out'
+              }}>
+                <div style={{ color: 'var(--aurora)', fontWeight: 900, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <CheckCircle size={18} />
+                  <span>{scanSuccess.title}</span>
+                </div>
+                <div style={{ color: '#E2E8F0', fontSize: '0.8rem', marginTop: '4px' }}>
+                  {scanSuccess.message}
+                </div>
+              </div>
+            )}
+
+            {/* Error */}
+            {scannerError && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '12px',
+                animation: 'fadeIn 0.25s ease-out'
+              }}>
+                <div style={{ color: '#EF4444', fontWeight: 800, fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <AlertCircle size={16} />
+                  <span>{scannerError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={startQrScanner}
+                  style={{
+                    marginTop: '8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: 'white',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reintentar Cámara
+                </button>
+              </div>
+            )}
+
+            {/* Botón Cancelar / Cerrar */}
+            <button
+              type="button"
+              onClick={handleCloseScanner}
+              style={{
+                width: '100%',
+                marginTop: '18px',
+                padding: '12px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '10px',
+                color: 'white',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+            >
+              Cerrar Escáner
+            </button>
+          </div>
+        </div>
+      )}
+
     </section>
   );
 }

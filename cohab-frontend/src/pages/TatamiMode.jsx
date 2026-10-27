@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import QRCode from 'qrcode';
 import { 
   Shield, PhoneCall, AlertTriangle, CheckCircle, Clock, 
   Users, Award, Activity, Heart, ArrowLeft, PlusCircle, 
-  Calendar, Check, UserCheck, Flame
+  Calendar, Check, UserCheck, Flame, QrCode, RefreshCw, X
 } from 'lucide-react';
 
 export default function TatamiMode() {
@@ -16,6 +17,14 @@ export default function TatamiMode() {
   const [selectedGroup, setSelectedGroup] = useState('todos'); // 'todos' | 'sub8' | 'infantil' | 'adolescente' | 'adulto'
   const [students, setStudents] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({}); // { [studentId]: boolean }
+
+  // Servicios y Código QR
+  const [services, setServices] = useState([]);
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrAttendanceCount, setQrAttendanceCount] = useState(0);
+  const [isGeneratingQr, setIsGeneratingQr] = useState(false);
 
   // Modal de Incidentes
   const [incidentModalOpen, setIncidentModalOpen] = useState(false);
@@ -160,9 +169,89 @@ export default function TatamiMode() {
     }
   };
 
+  const fetchServices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cohab_services')
+        .select('id, name, schedule, instructor_id, instructor_name')
+        .eq('is_active', true)
+        .order('name');
+        
+      if (!error && data && data.length > 0) {
+        setServices(data);
+        const mine = data.find(s => s.instructor_id === profile?.id);
+        setSelectedServiceId(mine ? mine.id : data[0].id);
+      }
+    } catch (e) {
+      console.error('Error fetching services for tatami:', e);
+    }
+  };
+
+  const fetchTodayQrCount = async (serviceId) => {
+    const sId = serviceId || selectedServiceId;
+    if (!sId) return;
+    try {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { count, error } = await supabase
+        .from('cohab_attendance')
+        .select('*', { count: 'exact', head: true })
+        .eq('service_id', sId)
+        .gte('checked_at', startOfToday.toISOString());
+        
+      if (!error) {
+        setQrAttendanceCount(count || 0);
+      }
+    } catch (e) {
+      console.error('Error fetching QR count:', e);
+    }
+  };
+
+  const handleGenerateQr = async (serviceId) => {
+    const targetId = serviceId || selectedServiceId;
+    const target = services.find(s => s.id === targetId);
+    if (!target) {
+      alert('Por favor selecciona una clase/horario para generar el código QR.');
+      return;
+    }
+
+    setIsGeneratingQr(true);
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const payload = JSON.stringify({
+        app: 'cohab_bjj',
+        service_id: target.id,
+        date: todayStr,
+        instructor_id: profile?.id || target.instructor_id || null
+      });
+
+      const url = await QRCode.toDataURL(payload, {
+        width: 360,
+        margin: 2,
+        color: {
+          dark: '#050B14',
+          light: '#FFFFFF'
+        }
+      });
+
+      setQrDataUrl(url);
+      setShowQrModal(true);
+      fetchTodayQrCount(target.id);
+    } catch (err) {
+      console.error('Error generating QR:', err);
+      alert('No se pudo generar el código QR.');
+    } finally {
+      setIsGeneratingQr(false);
+    }
+  };
+
   useEffect(() => {
     fetchRoster();
   }, [selectedGroup]);
+
+  useEffect(() => {
+    fetchServices();
+  }, [profile?.id]);
 
   // Toggle de Asistencia
   const toggleAttendance = async (studentId) => {
@@ -352,6 +441,91 @@ export default function TatamiMode() {
             <span style={{ fontSize: '0.85rem', fontWeight: 900, color: '#EF4444' }}>🔴 {redCount}</span>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>En Revisión</div>
           </div>
+        </div>
+      </div>
+
+      {/* Panel de Pase de Asistencia QR para el Tatami */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(0, 180, 216, 0.12), rgba(52, 211, 153, 0.08))',
+        border: '1px solid rgba(52, 211, 153, 0.3)',
+        borderRadius: '16px',
+        padding: '16px',
+        marginBottom: '18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <QrCode size={20} color="var(--aurora)" />
+            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'white' }}>
+              Código QR de Asistencia Tatami
+            </span>
+          </div>
+          <span style={{ fontSize: '0.7rem', background: 'rgba(52, 211, 153, 0.15)', color: 'var(--aurora)', padding: '2px 8px', borderRadius: '10px', fontWeight: 800, border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+            AUTO-VALIDACIÓN
+          </span>
+        </div>
+
+        {/* Selector de Disciplina / Clase a cargo */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            value={selectedServiceId}
+            onChange={e => {
+              setSelectedServiceId(e.target.value);
+              fetchTodayQrCount(e.target.value);
+            }}
+            style={{
+              flex: 1,
+              minWidth: '200px',
+              height: '42px',
+              background: 'rgba(5, 11, 20, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              borderRadius: '8px',
+              color: 'white',
+              fontSize: '0.82rem',
+              padding: '0 12px',
+              fontWeight: 600
+            }}
+          >
+            {services.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.name} {s.instructor_name ? `• ${s.instructor_name}` : ''}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => handleGenerateQr()}
+            disabled={isGeneratingQr || !selectedServiceId}
+            style={{
+              height: '42px',
+              padding: '0 18px',
+              background: 'linear-gradient(135deg, var(--aurora), #10B981)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#060B18',
+              fontWeight: 900,
+              fontSize: '0.82rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 15px rgba(52, 211, 153, 0.3)',
+              whiteSpace: 'nowrap',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}
+          >
+            <QrCode size={16} />
+            <span>{isGeneratingQr ? 'Generando...' : '📲 Proyectar QR'}</span>
+          </button>
+        </div>
+
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+          Proyecta este código en pantalla completa o muéstralo a los alumnos para que lo lean desde su aplicación y registren su asistencia automáticamente.
         </div>
       </div>
 
@@ -751,6 +925,181 @@ export default function TatamiMode() {
           </div>
         </div>
       )}
+
+      {/* MODAL FULLSCREEN / PANTALLA TATAMI QR */}
+      {showQrModal && (() => {
+        const currentService = services.find(s => s.id === selectedServiceId);
+        const instructorDisplay = currentService?.instructor_name || (profile?.staff_title ? `${profile.staff_title} ${profile.name}` : profile?.name);
+
+        return (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(3, 7, 18, 0.96)',
+            backdropFilter: 'blur(20px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            zIndex: 9999,
+            animation: 'fadeIn 0.25s ease-out'
+          }}>
+            <div style={{
+              background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 11, 24, 0.98) 100%)',
+              border: '2px solid rgba(52, 211, 153, 0.4)',
+              borderRadius: '24px',
+              padding: '28px 24px',
+              width: '100%',
+              maxWidth: '440px',
+              textAlign: 'center',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(52, 211, 153, 0.2)',
+              position: 'relative'
+            }}>
+              {/* Botón Cerrar */}
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '50%',
+                  width: '36px',
+                  height: '36px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s'
+                }}
+                title="Cerrar"
+              >
+                <X size={18} />
+              </button>
+
+              {/* Encabezado Marcial */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '6px' }}>
+                <span style={{ fontSize: '1.4rem' }}>🥋</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, color: 'var(--aurora)', fontSize: '0.85rem', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                  COHAB LOS ANDES · BJJ
+                </span>
+              </div>
+
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 900, color: 'white', margin: '4px 0 6px 0' }}>
+                {currentService?.name || 'Clase de Brazilian Jiu-Jitsu'}
+              </h2>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8', marginBottom: '18px' }}>
+                <span style={{ color: 'var(--aurora)', fontWeight: 800 }}>A cargo:</span>
+                <span style={{ color: 'white', fontWeight: 700 }}>{instructorDisplay}</span>
+              </div>
+
+              {/* Imagen del Código QR */}
+              <div style={{
+                background: '#FFFFFF',
+                padding: '16px',
+                borderRadius: '20px',
+                display: 'inline-block',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(52, 211, 153, 0.3)',
+                marginBottom: '18px',
+                maxWidth: '100%'
+              }}>
+                {qrDataUrl ? (
+                  <img 
+                    src={qrDataUrl} 
+                    alt="Código QR Asistencia Tatami" 
+                    style={{ 
+                      width: '260px', 
+                      height: '260px', 
+                      display: 'block',
+                      borderRadius: '10px'
+                    }} 
+                  />
+                ) : (
+                  <div style={{ width: '260px', height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#060B18', fontWeight: 700 }}>
+                    Generando código...
+                  </div>
+                )}
+              </div>
+
+              {/* Instrucción para el Alumno */}
+              <div style={{
+                background: 'rgba(52, 211, 153, 0.08)',
+                border: '1px solid rgba(52, 211, 153, 0.25)',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ color: 'var(--aurora)', fontWeight: 800, fontSize: '0.82rem', marginBottom: '2px' }}>
+                  📲 Escaneo Automático para Alumnos
+                </div>
+                <div style={{ color: '#E2E8F0', fontSize: '0.74rem', lineHeight: '1.3' }}>
+                  Abre la App COHAB y pulsa <strong>"Escanear QR de Asistencia"</strong> para marcar tu presencia sin validación manual.
+                </div>
+              </div>
+
+              {/* Contador en Vivo de Asistencias */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '10px 16px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                    Validados hoy
+                  </div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--aurora)' }}>
+                    ⚡ {qrAttendanceCount} alumnos
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchTodayQrCount(currentService?.id)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    color: 'white',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  title="Actualizar conteo en vivo"
+                >
+                  <RefreshCw size={14} />
+                  <span>Refrescar</span>
+                </button>
+              </div>
+
+              {/* Botón de Salir */}
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                style={{
+                  width: '100%',
+                  marginTop: '16px',
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '10px',
+                  color: 'white',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+              >
+                Cerrar Pantalla QR
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

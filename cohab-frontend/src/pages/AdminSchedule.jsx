@@ -48,6 +48,8 @@ export default function AdminSchedule() {
 
   // Form States
   const [name, setName] = useState('');
+  const [instructors, setInstructors] = useState([]);
+  const [selectedInstructorId, setSelectedInstructorId] = useState('');
   
   // Editing Mode States
   const [editingServiceId, setEditingServiceId] = useState(null);
@@ -108,6 +110,7 @@ export default function AdminSchedule() {
     }
     
     setRequiresAttendance(service.requires_attendance || false);
+    setSelectedInstructorId(service.instructor_id || '');
     setShowAddForm(true);
     
     // Scroll to form
@@ -116,6 +119,7 @@ export default function AdminSchedule() {
 
   const handleCancelForm = () => {
     setName('');
+    setSelectedInstructorId('');
     setScheduleBlocks([{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }]);
     setCapacityType('unlimited');
     setCapacityLimit('12');
@@ -167,8 +171,25 @@ export default function AdminSchedule() {
     }
   };
 
+  const fetchInstructors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cohab_profiles')
+        .select('id, name, belt, graus, staff_title, role')
+        .or('is_instructor.eq.true,role.in.(admin,teacher,instructor,monitor)')
+        .order('staff_order', { ascending: true, nullsFirst: false })
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setInstructors(data || []);
+    } catch (err) {
+      console.error("Error fetching instructors for schedule:", err);
+    }
+  };
+
   useEffect(() => {
     fetchServices();
+    fetchInstructors();
   }, []);
 
   // Handlers for Schedule Blocks
@@ -239,8 +260,9 @@ export default function AdminSchedule() {
       finalTiers = sortedTiers;
     }
 
-    // 3. Cupos
-    const finalCapacity = capacityType === 'unlimited' ? 0 : parseInt(capacityLimit) || 0;
+    // 4. Instructor a cargo
+    const assignedInst = instructors.find(i => i.id === selectedInstructorId);
+    const assignedName = assignedInst ? `${assignedInst.staff_title || 'Profesor'} ${assignedInst.name}` : null;
 
     try {
       const payload = {
@@ -249,7 +271,9 @@ export default function AdminSchedule() {
         schedule: consolidatedSchedule,
         capacity_limit: finalCapacity,
         requires_attendance: requiresAttendance,
-        pricing_tiers: finalTiers
+        pricing_tiers: finalTiers,
+        instructor_id: selectedInstructorId || null,
+        instructor_name: assignedName
       };
 
       let error;
@@ -270,6 +294,7 @@ export default function AdminSchedule() {
 
       // Reset Form
       setName('');
+      setSelectedInstructorId('');
       setScheduleBlocks([{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }]);
       setCapacityType('unlimited');
       setCapacityLimit('12');
@@ -372,6 +397,29 @@ export default function AdminSchedule() {
                   placeholder="ej: BJJ General, Funcional, Infantil..."
                   required 
                 />
+              </div>
+
+              {/* 1.1 Profesor / Instructor a Cargo */}
+              <div className="form-group" style={{ marginBottom: '18px' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🥋</span> Profesor / Instructor a Cargo
+                </label>
+                <select 
+                  className="form-input" 
+                  value={selectedInstructorId} 
+                  onChange={e => setSelectedInstructorId(e.target.value)}
+                  style={{ background: 'var(--bg-elevated)', color: 'white', height: '42px', fontSize: '0.85rem' }}
+                >
+                  <option value="">-- Sin Asignar / Rotativo --</option>
+                  {instructors.map(inst => (
+                    <option key={inst.id} value={inst.id}>
+                      {inst.staff_title || 'Profesor'} {inst.name} ({inst.belt})
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  El profesor o instructor asignado podrá proyectar el código QR de esta clase en el Tatami para asistencia de los alumnos.
+                </span>
               </div>
 
               {/* 2. Horarios Dinámicos */}
@@ -837,6 +885,22 @@ export default function AdminSchedule() {
                         <Trash2 size={14} />
                       </button>
                     </div>
+                  </div>
+
+                  {/* Badge Profesor a Cargo */}
+                  <div style={{ 
+                    display: 'flex', alignItems: 'center', gap: '8px', 
+                    fontSize: '0.78rem', 
+                    background: s.instructor_name ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                    padding: '6px 12px', 
+                    borderRadius: '8px', 
+                    border: s.instructor_name ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
+                    color: s.instructor_name ? 'var(--aurora)' : 'var(--text-muted)'
+                  }}>
+                    <span>🥋</span>
+                    <span style={{ fontWeight: 800 }}>
+                      {s.instructor_name ? `A cargo: ${s.instructor_name}` : 'Profesor rotativo o por asignar'}
+                    </span>
                   </div>
 
                   <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '10px' }}>

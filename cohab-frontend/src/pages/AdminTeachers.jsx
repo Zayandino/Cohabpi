@@ -1,33 +1,74 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, UserPlus, Trash2, Edit2, Save, X } from 'lucide-react';
+import { ArrowLeft, UserPlus, Trash2, Edit2, Save, X, Award, Shield, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 export default function AdminTeachers() {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState([]);
-  const [students, setStudents] = useState([]);
+  const [eligibleStudents, setEligibleStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   
   // Form States (agregar nuevo / promover)
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [newRole, setNewRole] = useState('teacher');
-  const [newBelt, setNewBelt] = useState('black');
+  const [staffTitle, setStaffTitle] = useState('Instructor');
+  const [staffOrder, setStaffOrder] = useState(1);
+  const [assignedRole, setAssignedRole] = useState('teacher');
 
   // Inline Edit States
   const [editingId, setEditingId] = useState(null);
-  const [editRole, setEditRole] = useState('');
-  const [editBelt, setEditBelt] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editOrder, setEditOrder] = useState(1);
+  const [editRole, setEditRole] = useState('teacher');
   const [updatingId, setUpdatingId] = useState(null);
 
+  // Mapeo canónico de cinturones
+  const getBeltLabel = (b, graus = 0) => {
+    const val = (b || '').toLowerCase();
+    let name = 'Cinturón Blanco';
+    if (val.includes('black') || val.includes('negro')) name = 'Cinturón Negro';
+    else if (val.includes('brown') || val.includes('marrón') || val.includes('marron') || val.includes('cafe')) name = 'Cinturón Café / Marrón';
+    else if (val.includes('purple') || val.includes('morado')) name = 'Cinturón Morado';
+    else if (val.includes('blue') || val.includes('azul')) name = 'Cinturón Azul';
+    
+    return graus > 0 ? `${name} (${graus} ${graus === 1 ? 'Grau' : 'Graus'})` : name;
+  };
+
+  const getBeltColor = (b) => {
+    const val = (b || '').toLowerCase();
+    if (val.includes('black') || val.includes('negro')) return '#000000';
+    if (val.includes('brown') || val.includes('marrón') || val.includes('marron') || val.includes('cafe')) return '#8B4513';
+    if (val.includes('purple') || val.includes('morado')) return '#800080';
+    if (val.includes('blue') || val.includes('azul')) return '#2563EB';
+    return '#E5E7EB';
+  };
+
+  // Sugiere automáticamente la maestría según el cinturón y los graus
+  const getSuggestedMastery = (belt, graus = 0) => {
+    const val = (belt || '').toLowerCase();
+    const g = parseInt(graus) || 0;
+    if (val.includes('black') || val.includes('negro')) {
+      return g >= 3 ? 'Maestro' : 'Profesor';
+    }
+    if (val.includes('brown') || val.includes('marrón') || val.includes('marron') || val.includes('cafe')) {
+      return 'Instructor';
+    }
+    if (val.includes('purple') || val.includes('morado')) {
+      return 'Monitor';
+    }
+    return 'Instructor';
+  };
+
+  // Cargar Staff actual
   const fetchTeachers = async () => {
     try {
       const { data, error } = await supabase
         .from('cohab_profiles')
-        .select('*')
-        .in('role', ['admin', 'teacher', 'instructor', 'monitor'])
+        .select('id, name, email, belt, graus, role, is_instructor, staff_title, staff_order')
+        .or('is_instructor.eq.true,role.in.(admin,teacher,instructor,monitor)')
+        .order('staff_order', { ascending: true, nullsFirst: false })
         .order('name', { ascending: true });
         
       if (error) throw error;
@@ -39,19 +80,20 @@ export default function AdminTeachers() {
     }
   };
 
-  const fetchStudents = async () => {
+  // Cargar exclusivamente alumnos con cinturón Morado, Café/Marrón y Negro
+  const fetchEligibleStudents = async () => {
     try {
       setLoadingStudents(true);
       const { data, error } = await supabase
         .from('cohab_profiles')
-        .select('id, name, email')
-        .in('role', ['student', 'miembro'])
+        .select('id, name, email, belt, graus, role, is_instructor, staff_title')
+        .in('belt', ['purple', 'brown', 'black', 'morado', 'marron', 'cafe', 'negro'])
         .order('name', { ascending: true });
         
       if (error) throw error;
-      setStudents(data || []);
+      setEligibleStudents(data || []);
     } catch (err) {
-      console.error("Error fetching students:", err);
+      console.error("Error fetching eligible students:", err);
     } finally {
       setLoadingStudents(false);
     }
@@ -59,19 +101,41 @@ export default function AdminTeachers() {
 
   useEffect(() => {
     fetchTeachers();
-    fetchStudents();
+    fetchEligibleStudents();
   }, []);
+
+  // Al seleccionar un alumno en el formulario, pre-configurar su maestría correspondiente
+  const handleSelectStudent = (studentId) => {
+    setSelectedStudentId(studentId);
+    if (!studentId) return;
+
+    const student = eligibleStudents.find(s => s.id === studentId);
+    if (student) {
+      const suggested = getSuggestedMastery(student.belt, student.graus);
+      setStaffTitle(student.staff_title || suggested);
+      
+      if (suggested === 'Maestro' || suggested === 'Profesor') {
+        setAssignedRole('teacher');
+      } else if (suggested === 'Instructor') {
+        setAssignedRole('instructor');
+      } else {
+        setAssignedRole('monitor');
+      }
+    }
+  };
 
   const handleStartEdit = (t) => {
     setEditingId(t.id);
+    setEditTitle(t.staff_title || getSuggestedMastery(t.belt, t.graus));
+    setEditOrder(t.staff_order || 1);
     setEditRole(t.role || 'teacher');
-    setEditBelt(t.belt || 'black');
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setEditRole('');
-    setEditBelt('');
+    setEditTitle('');
+    setEditOrder(1);
+    setEditRole('teacher');
   };
 
   const handleUpdateTeacher = async (id) => {
@@ -79,19 +143,23 @@ export default function AdminTeachers() {
       setUpdatingId(id);
       const { error } = await supabase
         .from('cohab_profiles')
-        .update({ role: editRole, belt: editBelt })
+        .update({ 
+          staff_title: editTitle,
+          staff_order: parseInt(editOrder) || 1,
+          role: editRole,
+          is_instructor: true
+        })
         .eq('id', id);
 
       if (error) throw error;
 
-      // Actualizar estado local sin recargar toda la lista
       setTeachers(prev => prev.map(t => 
-        t.id === id ? { ...t, role: editRole, belt: editBelt } : t
+        t.id === id ? { ...t, staff_title: editTitle, staff_order: parseInt(editOrder) || 1, role: editRole } : t
       ));
       setEditingId(null);
     } catch (err) {
       console.error("Error updating teacher:", err);
-      alert("Error al actualizar staff.");
+      alert("Error al actualizar información del staff.");
     } finally {
       setUpdatingId(null);
     }
@@ -100,7 +168,7 @@ export default function AdminTeachers() {
   const handleAddTeacher = async (e) => {
     e.preventDefault();
     if (!selectedStudentId) {
-      alert("Por favor selecciona un alumno para promover.");
+      alert("Por favor selecciona un alumno graduado para asignar al Staff.");
       return;
     }
 
@@ -108,62 +176,53 @@ export default function AdminTeachers() {
       const { error } = await supabase
         .from('cohab_profiles')
         .update({
-          role: newRole,
-          belt: newBelt
+          is_instructor: true,
+          staff_title: staffTitle,
+          staff_order: parseInt(staffOrder) || 1,
+          role: assignedRole
         })
         .eq('id', selectedStudentId);
 
       if (error) throw error;
       
       setSelectedStudentId('');
-      setNewRole('teacher');
-      setNewBelt('black');
+      setStaffTitle('Instructor');
+      setStaffOrder(1);
       setShowAddForm(false);
       fetchTeachers();
-      fetchStudents(); // Recargar la lista de alumnos disponibles
+      fetchEligibleStudents();
     } catch (err) {
       console.error("Error promoting student to staff:", err);
-      alert("Error al promover alumno a staff.");
+      alert("Error al asignar alumno al staff.");
     }
   };
 
-  const handleDeleteTeacher = async (id) => {
-    if (!window.confirm("¿Estás seguro de que deseas quitar a esta persona del staff? Su cuenta de alumno no será eliminada, simplemente volverá a ser un alumno regular (rol 'student').")) return;
+  const handleDeleteTeacher = async (id, name) => {
+    if (!window.confirm(`¿Estás seguro de que deseas desvincular a ${name} del staff de instrucción? Su cuenta de alumno permanecerá intacta.`)) return;
 
     try {
       const { error } = await supabase
         .from('cohab_profiles')
         .update({
+          is_instructor: false,
+          staff_title: null,
           role: 'student'
         })
         .eq('id', id);
 
       if (error) throw error;
       fetchTeachers();
-      fetchStudents(); // Reaparecerá en la lista de alumnos seleccionables
+      fetchEligibleStudents();
     } catch (err) {
       console.error("Error removing teacher from staff:", err);
-      alert("Error al remover staff.");
+      alert("Error al quitar instructor del staff.");
     }
   };
 
-  const getBeltLabel = (b) => {
-    const map = {
-      black: 'Cinturón Negro', brown: 'Cinturón Café / Marrón',
-      purple: 'Cinturón Morado', blue: 'Cinturón Azul', white: 'Cinturón Blanco'
-    };
-    return map[b] || b || '—';
-  };
-
-  const getRoleLabel = (r) => {
-    const map = { 
-      admin: 'Administrador', 
-      teacher: 'Profesor', 
-      instructor: 'Instructor',
-      monitor: 'Monitor'
-    };
-    return map[r] || r || '—';
-  };
+  // Filtrar de la lista de selección los alumnos que ya están activos en staff
+  const unassignedStudents = eligibleStudents.filter(
+    s => !teachers.some(t => t.id === s.id)
+  );
 
   return (
     <div>
@@ -171,91 +230,123 @@ export default function AdminTeachers() {
         <button className="icon-btn" onClick={() => navigate('/profile')} aria-label="Volver">
           <ArrowLeft size={20} />
         </button>
-        <div className="top-bar-title">Gestión de Staff</div>
-        <button className="icon-btn" onClick={() => setShowAddForm(!showAddForm)} aria-label="Añadir">
+        <div className="top-bar-title">Staff & Maestría Técnica</div>
+        <button className="icon-btn" onClick={() => setShowAddForm(!showAddForm)} aria-label="Añadir Staff">
           <UserPlus size={20} />
         </button>
       </div>
 
-      <div className="content" style={{ paddingTop: '20px', paddingBottom: '30px' }}>
+      <div className="content" style={{ paddingTop: '20px', paddingBottom: '40px' }}>
         
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
-          Administra los perfiles de los profesores, instructores y staff de la academia en tiempo real promoviendo cuentas de alumnos existentes.
-        </p>
+        {/* Banner Explicativo de Regla Técnica BJJ */}
+        <div className="glass-panel" style={{ padding: '16px', marginBottom: '20px', borderLeft: '4px solid var(--aurora)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <Award size={18} color="var(--aurora)" />
+            <h4 style={{ margin: 0, color: 'white', fontSize: '0.9rem', fontWeight: 800 }}>Normativa Técnica de Graduación</h4>
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', margin: 0, lineHeight: '1.4' }}>
+            Solo alumnos graduados con cinturones <strong style={{ color: '#C084FC' }}>Morado</strong>, <strong style={{ color: '#D97706' }}>Café / Marrón</strong> y <strong style={{ color: '#FFFFFF' }}>Negro</strong> pueden ser asignados al Staff y dirigir clases con código QR.
+          </p>
+        </div>
 
+        {/* Formulario para asignar nuevo miembro al Staff */}
         {showAddForm && (
-          <div className="glass-panel" style={{ padding: '20px', marginBottom: '25px', border: '1px solid var(--border-glass)' }}>
-            <h4 style={{ color: 'white', margin: '0 0 15px 0', fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800 }}>Promover Alumno a Staff</h4>
+          <div className="glass-panel" style={{ padding: '20px', marginBottom: '25px', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h4 style={{ color: 'white', margin: 0, fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800 }}>
+                Asignar Alumno Graduado a Staff
+              </h4>
+              <button onClick={() => setShowAddForm(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
             <form onSubmit={handleAddTeacher}>
-              
+              {/* Selector de alumno graduado */}
               <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>Selecciona un Alumno Registrado</label>
+                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>
+                  Selecciona Alumno Graduado (Morado, Café o Negro)
+                </label>
                 {loadingStudents ? (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '5px 0' }}>Cargando alumnos del tatami...</p>
-                ) : students.length === 0 ? (
-                  <p style={{ color: '#EF4444', fontSize: '0.78rem', fontWeight: 800, margin: '5px 0' }}>No hay cuentas de alumnos regulares disponibles para promover.</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '5px 0' }}>Buscando graduados...</p>
+                ) : unassignedStudents.length === 0 ? (
+                  <div style={{ padding: '10px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                    <p style={{ color: '#EF4444', fontSize: '0.78rem', fontWeight: 800, margin: 0 }}>
+                      No hay alumnos graduados pendientes por promover (todos los alumnos morado/café/negro ya son miembros del Staff).
+                    </p>
+                  </div>
                 ) : (
                   <select 
                     className="form-input" 
                     value={selectedStudentId} 
-                    onChange={e => setSelectedStudentId(e.target.value)}
-                    style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px', fontSize: '0.82rem' }}
+                    onChange={e => handleSelectStudent(e.target.value)}
+                    style={{ background: 'var(--bg-elevated)', color: 'white', height: '42px', fontSize: '0.85rem' }}
                     required
                   >
-                    <option value="">-- Elige un Alumno --</option>
-                    {students.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.email || 'Sin correo'})</option>
+                    <option value="">-- Elige un Alumno Graduado --</option>
+                    {unassignedStudents.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — {getBeltLabel(s.belt, s.graus)}
+                      </option>
                     ))}
                   </select>
                 )}
               </div>
 
+              {/* Título de Maestría / Cargo */}
               <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>Rol / Cargo Asignado</label>
+                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>
+                  Grado y Maestría Asignada
+                </label>
                 <select 
                   className="form-input" 
-                  value={newRole} 
+                  value={staffTitle} 
                   onChange={e => {
-                    const role = e.target.value;
-                    setNewRole(role);
-                    // Sugerir cinturón automáticamente para una UX premium
-                    if (role === 'teacher') setNewBelt('black');
-                    else if (role === 'instructor') setNewBelt('brown');
-                    else if (role === 'monitor') setNewBelt('purple');
+                    const title = e.target.value;
+                    setStaffTitle(title);
+                    if (title === 'Maestro' || title === 'Profesor' || title === 'Director Técnico') {
+                      setAssignedRole('teacher');
+                    } else if (title === 'Instructor') {
+                      setAssignedRole('instructor');
+                    } else {
+                      setAssignedRole('monitor');
+                    }
                   }}
-                  style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px', fontSize: '0.82rem' }}
+                  style={{ background: 'var(--bg-elevated)', color: 'white', height: '40px', fontSize: '0.85rem' }}
                 >
-                  <option value="teacher">Profesor (Cinturón Negro)</option>
-                  <option value="instructor">Instructor (Cinturón Café / Marrón)</option>
-                  <option value="monitor">Monitor (Cinturón Morado)</option>
-                  <option value="admin">Administrador General</option>
+                  <option value="Profesor">Profesor (Cinturón Negro)</option>
+                  <option value="Maestro">Maestro (Cinturón Negro 3+ Graus)</option>
+                  <option value="Director Técnico">Director Técnico</option>
+                  <option value="Instructor">Instructor (Cinturón Café / Marrón)</option>
+                  <option value="Instructor Asistente">Instructor Asistente</option>
+                  <option value="Monitor">Monitor (Cinturón Morado)</option>
                 </select>
               </div>
 
+              {/* Orden de visualización en la academia */}
               <div className="form-group" style={{ marginBottom: '20px' }}>
-                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>Cinturón BJJ</label>
-                <select 
+                <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800 }}>
+                  Prioridad / Orden en Horarios (1 = Principal)
+                </label>
+                <input 
+                  type="number"
+                  min="1"
+                  max="99"
                   className="form-input" 
-                  value={newBelt} 
-                  onChange={e => setNewBelt(e.target.value)}
-                  style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px', fontSize: '0.82rem' }}
-                >
-                  <option value="black">Cinturón Negro</option>
-                  <option value="brown">Cinturón Café / Marrón</option>
-                  <option value="purple">Cinturón Morado</option>
-                  <option value="blue">Cinturón Azul</option>
-                  <option value="white">Cinturón Blanco</option>
-                  <option value="No Belt">- Sin Cinturón BJJ -</option>
-                </select>
+                  value={staffOrder} 
+                  onChange={e => setStaffOrder(e.target.value)}
+                  style={{ background: 'var(--bg-elevated)', color: 'white', height: '40px', fontSize: '0.85rem' }}
+                />
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              {/* Botones */}
+              <div style={{ display: 'flex', gap: '12px' }}>
                 <button 
                   type="submit" 
                   className="auth-btn" 
                   disabled={!selectedStudentId}
                   style={{ 
-                    flex: 1, minHeight: '40px', height: 'auto',
+                    flex: 1, minHeight: '42px', height: 'auto',
                     background: 'linear-gradient(135deg, var(--aurora), #10B981)', 
                     color: '#060B18', fontWeight: 900, cursor: 'pointer', 
                     border: 'none', borderRadius: '8px',
@@ -264,7 +355,7 @@ export default function AdminTeachers() {
                     opacity: selectedStudentId ? 1 : 0.5
                   }}
                 >
-                  Promover a Staff
+                  Confirmar Asignación
                 </button>
                 <button 
                   type="button" 
@@ -274,7 +365,7 @@ export default function AdminTeachers() {
                     setSelectedStudentId('');
                   }} 
                   style={{ 
-                    flex: 1, minHeight: '40px', height: 'auto',
+                    flex: 1, minHeight: '42px', height: 'auto',
                     background: 'rgba(255, 255, 255, 0.02)', 
                     border: '1px solid var(--border-glass)', color: 'white', 
                     cursor: 'pointer', borderRadius: '8px',
@@ -288,68 +379,111 @@ export default function AdminTeachers() {
           </div>
         )}
 
+        {/* Lista del Staff Activo */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', color: 'white', fontSize: '1.05rem', margin: 0, fontWeight: 800 }}>
+            Cuerpo Docente & Staff ({teachers.length})
+          </h3>
+        </div>
+
         {loading ? (
-          <p style={{ color: 'var(--text-muted)' }}>Cargando staff de la academia...</p>
+          <p style={{ color: 'var(--text-muted)' }}>Cargando equipo docente de COHAB...</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {teachers.map(t => {
               const isEditing = editingId === t.id;
               const isUpdating = updatingId === t.id;
+              const beltColor = getBeltColor(t.belt);
+              const masteryTitle = t.staff_title || getSuggestedMastery(t.belt, t.graus);
 
               return (
-                <div key={t.id} className="glass-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', border: '1px solid var(--border-glass)' }}>
-                  {/* Fila principal */}
-                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                <div 
+                  key={t.id} 
+                  className="glass-panel" 
+                  style={{ 
+                    padding: '16px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '12px', 
+                    border: '1px solid var(--border-glass)',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {/* Fila principal del profesor */}
+                  <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
                     <div style={{
-                      width: '50px', height: '50px', borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.04)', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      fontSize: '1.8rem', border: '2px solid var(--border-glass)', flexShrink: 0
+                      width: '52px', height: '52px', borderRadius: '12px',
+                      background: 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.8rem', border: '1px solid var(--border-glass)', flexShrink: 0,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
                     }}>
                       🥋
                     </div>
                     
-                    <div style={{ flex: 1 }}>
-                      <h3 style={{ fontFamily: 'var(--font-display)', color: 'white', fontSize: '1.05rem', marginBottom: '2px', marginTop: 0, fontWeight: 800 }}>
-                        {t.name}
-                      </h3>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--aurora)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>
-                        {getRoleLabel(t.role)}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-light)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h3 style={{ fontFamily: 'var(--font-display)', color: 'white', fontSize: '1.05rem', margin: 0, fontWeight: 900 }}>
+                          {t.name}
+                        </h3>
+                        {/* Badge de Maestría */}
                         <span style={{ 
-                          width: '8px', 
-                          height: '8px', 
+                          background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.2), rgba(16, 185, 129, 0.1))',
+                          color: 'var(--aurora)',
+                          border: '1px solid rgba(52, 211, 153, 0.4)',
+                          borderRadius: '4px',
+                          padding: '2px 8px',
+                          fontSize: '0.68rem',
+                          fontWeight: 900,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}>
+                          {masteryTitle}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                        <span style={{ 
+                          width: '10px', 
+                          height: '10px', 
                           borderRadius: '50%', 
-                          background: t.belt === 'black' ? '#000' : t.belt === 'brown' ? '#8B4513' : t.belt === 'purple' ? '#800080' : t.belt === 'blue' ? '#0000FF' : '#FFF',
-                          border: '1px solid rgba(255,255,255,0.2)'
+                          background: beltColor,
+                          border: '1px solid rgba(255,255,255,0.3)'
                         }} />
-                        {getBeltLabel(t.belt)}
+                        <span>{getBeltLabel(t.belt, t.graus)}</span>
+                        {t.staff_order && (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>• Prioridad: #{t.staff_order}</span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {t.email || 'Sin correo registrado'}
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {/* Botón Editar / Cancelar */}
+                    {/* Acciones */}
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                       <button 
                         onClick={() => isEditing ? handleCancelEdit() : handleStartEdit(t)}
                         className="icon-btn" 
                         style={{ 
-                          width: '32px', height: '32px', 
+                          width: '34px', height: '34px', 
                           background: isEditing ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
                           color: isEditing ? '#EF4444' : '#60A5FA', 
                           borderColor: isEditing ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)' 
                         }}
-                        title={isEditing ? 'Cancelar edición' : 'Editar rol y cinturón'}
+                        title={isEditing ? 'Cancelar edición' : 'Editar maestría y orden'}
                       >
-                        {isEditing ? <X size={14} /> : <Edit2 size={14} />}
+                        {isEditing ? <X size={15} /> : <Edit2 size={15} />}
                       </button>
                       <button 
-                        onClick={() => handleDeleteTeacher(t.id)}
+                        onClick={() => handleDeleteTeacher(t.id, t.name)}
                         className="icon-btn" 
-                        style={{ width: '32px', height: '32px', background: 'rgba(255,77,77,0.1)', color: '#FF6B6B', borderColor: 'rgba(255,77,77,0.3)' }}
+                        style={{ width: '34px', height: '34px', background: 'rgba(255,77,77,0.1)', color: '#FF6B6B', borderColor: 'rgba(255,77,77,0.3)' }}
                         title="Quitar del Staff"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   </div>
@@ -362,49 +496,52 @@ export default function AdminTeachers() {
                       display: 'flex', flexDirection: 'column', gap: '10px',
                       animation: 'fadeIn 0.25s ease-out'
                     }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '10px' }}>
                         <div>
                           <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontWeight: 800 }}>
-                            Rol / Cargo
+                            Grado y Maestría
                           </label>
                           <select 
                             className="form-input"
-                            value={editRole}
+                            value={editTitle}
                             onChange={e => {
-                              const role = e.target.value;
-                              setEditRole(role);
-                              // Sugerir cinturón en edición
-                              if (role === 'teacher') setEditBelt('black');
-                              else if (role === 'instructor') setEditBelt('brown');
-                              else if (role === 'monitor') setEditBelt('purple');
+                              const title = e.target.value;
+                              setEditTitle(title);
+                              if (title === 'Maestro' || title === 'Profesor' || title === 'Director Técnico') {
+                                setEditRole('teacher');
+                              } else if (title === 'Instructor') {
+                                setEditRole('instructor');
+                              } else {
+                                setEditRole('monitor');
+                              }
                             }}
                             style={{ background: 'var(--bg-elevated)', color: 'white', height: '36px', fontSize: '0.78rem' }}
                           >
-                            <option value="teacher">Profesor</option>
-                            <option value="instructor">Instructor</option>
-                            <option value="monitor">Monitor</option>
-                            <option value="admin">Administrador</option>
+                            <option value="Profesor">Profesor</option>
+                            <option value="Maestro">Maestro</option>
+                            <option value="Director Técnico">Director Técnico</option>
+                            <option value="Instructor">Instructor</option>
+                            <option value="Instructor Asistente">Instructor Asistente</option>
+                            <option value="Monitor">Monitor</option>
                           </select>
                         </div>
+
                         <div>
                           <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontWeight: 800 }}>
-                            Cinturón BJJ
+                            Prioridad / Orden
                           </label>
-                          <select 
+                          <input 
+                            type="number"
+                            min="1"
+                            max="99"
                             className="form-input"
-                            value={editBelt}
-                            onChange={e => setEditBelt(e.target.value)}
+                            value={editOrder}
+                            onChange={e => setEditOrder(e.target.value)}
                             style={{ background: 'var(--bg-elevated)', color: 'white', height: '36px', fontSize: '0.78rem' }}
-                          >
-                            <option value="black">Negro</option>
-                            <option value="brown">Café / Marrón</option>
-                            <option value="purple">Morado</option>
-                            <option value="blue">Azul</option>
-                            <option value="white">Blanco</option>
-                            <option value="No Belt">Sin Cinturón</option>
-                          </select>
+                          />
                         </div>
                       </div>
+
                       <button
                         onClick={() => handleUpdateTeacher(t.id)}
                         disabled={isUpdating}
@@ -429,9 +566,17 @@ export default function AdminTeachers() {
             })}
 
             {teachers.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '20px' }}>
-                No hay miembros del staff registrados. ¡Promueve a un alumno usando el botón superior derecho!
-              </p>
+              <div style={{ textAlign: 'center', padding: '30px 20px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed var(--border-glass)' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 10px 0' }}>
+                  No hay miembros asignados al staff aún.
+                </p>
+                <button 
+                  onClick={() => setShowAddForm(true)}
+                  style={{ background: 'none', border: 'none', color: 'var(--aurora)', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}
+                >
+                  + Asignar primer alumno graduado
+                </button>
+              </div>
             )}
           </div>
         )}
