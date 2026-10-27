@@ -20,8 +20,8 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
   const isBirthdateBugged = profile?.birthdate && profile?.created_at && 
     (profile.birthdate === profile.created_at.substring(0, 10));
 
-  if (profile && (!profile.phone || !profile.name || !profile.birthdate || isBirthdateBugged) && location.pathname !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />;
+  if (profile && (!profile.phone || !profile.name || !profile.birthdate || isBirthdateBugged) && location.pathname !== '/onboarding' && location.pathname !== '/registro') {
+    return <Navigate to="/registro" replace />;
   }
 
   // Ruta que requiere admin

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { createClient } from '@supabase/supabase-js';
 import { LogOut, ArrowLeft, Plus, Calendar, Users, QrCode, Settings, Trash2, Edit2, CreditCard, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const getSupabaseUrl = () => {
   if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
@@ -1284,54 +1284,20 @@ export default function Profile() {
                             );
                           })}
 
-                          {/* Lógica de Firma Condicional para el Titular */}
+                          {/* Estado de Expediente y Protocolo v5 para el Titular */}
                           {(((enrollments.main || []).length > 0) && !profile?.waiver_signed) && (
-                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
-                              <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención (Tutor)</h5>
-                              <div style={{ marginBottom: '10px' }}>
-                                <a 
-                                  href={getPersonAge(profile) < 18 
-                                    ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
-                                    : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
-                                  } 
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="auth-btn" 
-                                  style={{ background: 'var(--bg-elevated)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 10px', width: 'fit-content', margin: '0 0 10px 0' }}
-                                >
-                                  🏥 Llenar Ficha de Salud
-                                </a>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-                                  <input 
-                                    type="checkbox" 
-                                    id="waiver-health-main" 
-                                    checked={signedWaivers.main?.health || false}
-                                    onChange={(e) => setSignedWaivers(prev => ({
-                                      ...prev,
-                                      main: { ...prev.main, health: e.target.checked }
-                                    }))}
-                                    style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
-                                  />
-                                  <label htmlFor="waiver-health-main" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-                                    Declaro haber completado la Ficha de Salud en el enlace superior.
-                                  </label>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                  <input 
-                                    type="checkbox" 
-                                    id="waiver-terms-main" 
-                                    checked={signedWaivers.main?.waiver || false}
-                                    onChange={(e) => setSignedWaivers(prev => ({
-                                      ...prev,
-                                      main: { ...prev.main, waiver: e.target.checked }
-                                    }))}
-                                    style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
-                                  />
-                                  <label htmlFor="waiver-terms-main" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-                                    Asumo la responsabilidad de riesgos y acepto los términos de liberación por este plan.
-                                  </label>
-                                </div>
-                              </div>
+                            <div style={{ background: 'rgba(0, 180, 216, 0.08)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid rgba(0, 180, 216, 0.25)' }}>
+                              <h5 style={{ color: '#00B4D8', margin: '0 0 6px 0', fontSize: '0.82rem', fontWeight: 800 }}>📜 Protocolo de Compromiso v5 Requerido</h5>
+                              <p style={{ margin: '0 0 8px 0', fontSize: '0.72rem', color: 'var(--text-light)' }}>
+                                Para activar este plan debes formalizar el Protocolo de Compromiso de la temporada.
+                              </p>
+                              <Link 
+                                to="/formalizacion"
+                                className="auth-btn" 
+                                style={{ background: 'linear-gradient(135deg, #0077B6, #00B4D8)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 12px', width: 'fit-content', margin: 0, borderRadius: '6px' }}
+                              >
+                                ✍️ Leer y Firmar Protocolo v5
+                              </Link>
                             </div>
                           )}
                         </div>
@@ -1431,54 +1397,20 @@ export default function Profile() {
                                 );
                               })}
 
-                              {/* Lógica de Firma Condicional para el Familiar */}
+                              {/* Estado de Expediente y Protocolo v5 para el Familiar */}
                               {(((enrollments[m.id] || []).length > 0) && !m.waiver_signed) && (
-                                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid var(--border-glass)' }}>
-                                  <h5 style={{ color: 'var(--aurora)', margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 800 }}>📋 Requisitos de Salud y Exención ({m.name})</h5>
-                                  <div style={{ marginBottom: '10px' }}>
-                                    <a 
-                                      href={getPersonAge(m) < 18 
-                                        ? "https://docs.google.com/forms/d/e/1FAIpQLSeCkIuVlBJh63l-s4Mk-ruhPkMztvZnxvVx-afQHR_u-r1sGQ/viewform"
-                                        : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
-                                      } 
-                                      target="_blank" 
-                                      rel="noreferrer"
-                                      className="auth-btn" 
-                                      style={{ background: 'var(--bg-elevated)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 10px', width: 'fit-content', margin: '0 0 10px 0' }}
-                                    >
-                                      🏥 Llenar Ficha de Salud
-                                    </a>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-                                      <input 
-                                        type="checkbox" 
-                                        id={`waiver-health-${m.id}`} 
-                                        checked={signedWaivers[m.id]?.health || false}
-                                        onChange={(e) => setSignedWaivers(prev => ({
-                                          ...prev,
-                                          [m.id]: { ...prev[m.id], health: e.target.checked }
-                                        }))}
-                                        style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
-                                      />
-                                      <label htmlFor={`waiver-health-${m.id}`} style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-                                        Declaro haber completado la Ficha de Salud en el enlace superior.
-                                      </label>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                      <input 
-                                        type="checkbox" 
-                                        id={`waiver-terms-${m.id}`} 
-                                        checked={signedWaivers[m.id]?.waiver || false}
-                                        onChange={(e) => setSignedWaivers(prev => ({
-                                          ...prev,
-                                          [m.id]: { ...prev[m.id], waiver: e.target.checked }
-                                        }))}
-                                        style={{ width: '15px', height: '15px', marginTop: '2px', cursor: 'pointer' }}
-                                      />
-                                      <label htmlFor={`waiver-terms-${m.id}`} style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-                                        Asumo la responsabilidad de riesgos y acepto los términos de liberación por este familiar.
-                                      </label>
-                                    </div>
-                                  </div>
+                                <div style={{ background: 'rgba(0, 180, 216, 0.08)', padding: '12px', borderRadius: '8px', marginTop: '12px', border: '1px solid rgba(0, 180, 216, 0.25)' }}>
+                                  <h5 style={{ color: '#00B4D8', margin: '0 0 6px 0', fontSize: '0.82rem', fontWeight: 800 }}>📜 Protocolo de Compromiso v5 ({m.name})</h5>
+                                  <p style={{ margin: '0 0 8px 0', fontSize: '0.72rem', color: 'var(--text-light)' }}>
+                                    Para activar este plan debes formalizar el Protocolo de Compromiso de la temporada por tu familiar.
+                                  </p>
+                                  <Link 
+                                    to="/formalizacion"
+                                    className="auth-btn" 
+                                    style={{ background: 'linear-gradient(135deg, #0077B6, #00B4D8)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.72rem', height: '28px', padding: '0 12px', width: 'fit-content', margin: 0, borderRadius: '6px' }}
+                                  >
+                                    ✍️ Leer y Firmar Protocolo v5
+                                  </Link>
                                 </div>
                               )}
                             </div>

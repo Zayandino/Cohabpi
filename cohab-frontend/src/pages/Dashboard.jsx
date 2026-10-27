@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 
@@ -278,6 +278,27 @@ export default function Dashboard() {
             </div>
             {profile?.role === 'admin' && (
               <span id="admin-badge" className="admin-badge" style={{ display: 'inline-block' }}>ADMIN</span>
+            )}
+            {(profile?.is_instructor || profile?.role === 'admin') && (
+              <Link 
+                to="/tatami" 
+                style={{ 
+                  textDecoration: 'none', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  background: 'rgba(0, 180, 216, 0.15)',
+                  border: '1px solid rgba(0, 180, 216, 0.35)',
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  color: '#00B4D8',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  marginLeft: 'auto'
+                }}
+              >
+                <span>🥋 Modo Tatami</span>
+              </Link>
             )}
           </div>
         </div>
@@ -574,15 +595,10 @@ export default function Dashboard() {
                       </div>
                     </div>
                     
-                    {/* Botón Ficha de Salud por Edad */}
-                    <div style={{ marginTop: '4px' }}>
-                      <a 
-                        href={fam.age >= 18 
-                          ? "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1"
-                          : "https://docs.google.com/forms/d/e/1FAIpQLSdopTSPEEUyUgIFDFuqEaFH57u310TQaYV-XVnegiJsg3VyUA/viewform?pli=1&entry.12345=MenorDeEdad"
-                        }
-                        target="_blank"
-                        rel="noreferrer"
+                    {/* Botón de Formalización y Protocolo */}
+                    <div style={{ marginTop: '6px' }}>
+                      <Link 
+                        to="/formalizacion"
                         style={{ textDecoration: 'none', width: '100%', display: 'block' }}
                       >
                         <button
@@ -593,9 +609,9 @@ export default function Dashboard() {
                             minHeight: '32px',
                             height: 'auto',
                             padding: '6px 12px',
-                            background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid var(--border-glass)',
-                            color: 'white',
+                            background: fam.activeSub ? 'rgba(255,255,255,0.03)' : 'rgba(0, 180, 216, 0.15)',
+                            border: fam.activeSub ? '1px solid var(--border-glass)' : '1px solid rgba(0, 180, 216, 0.4)',
+                            color: fam.activeSub ? 'var(--text-light)' : '#00B4D8',
                             fontSize: '0.75rem',
                             fontWeight: 800,
                             borderRadius: '6px',
@@ -606,9 +622,9 @@ export default function Dashboard() {
                             margin: 0
                           }}
                         >
-                          🏥 Ficha de Salud Pendiente ({fam.age >= 18 ? 'Adulto' : 'Menor de Edad'})
+                          {fam.activeSub ? '📜 Expediente y Protocolo v5' : '🥋 Formalizar Matrícula & Protocolo v5'}
                         </button>
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 );

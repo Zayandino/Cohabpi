@@ -15,6 +15,10 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminSchedule from './pages/AdminSchedule';
 import AdminTeachers from './pages/AdminTeachers';
 
+import RegistrationFlow from './pages/RegistrationFlow';
+import FormalizationFlow from './pages/FormalizationFlow';
+import TatamiMode from './pages/TatamiMode';
+
 function App() {
   return (
     <AuthProvider>
@@ -36,6 +40,9 @@ function App() {
         <div className="app">
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/registro" element={<ProtectedRoute><RegistrationFlow /></ProtectedRoute>} />
+            <Route path="/formalizacion" element={<ProtectedRoute><FormalizationFlow /></ProtectedRoute>} />
+            <Route path="/tatami" element={<ProtectedRoute><TatamiMode /></ProtectedRoute>} />
             <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
