@@ -348,17 +348,43 @@ export default function Dashboard() {
     return selected;
   };
 
-  // Helper: retorna los bloques de horario de un servicio que corren HOY
+  // Helper: retorna los bloques de horario de un servicio que corren HOY con su profesor asignado
   const getTodayBlocks = (serviceId) => {
     if (!serviceId || !services.length) return [];
     const service = services.find(s => s.id === serviceId);
-    if (!service?.schedule) return [];
+    if (!service) return [];
     const todayKey = ['DOM','LUN','MAR','MIE','JUE','VIE','SAB'][new Date().getDay()];
+
+    // 1. Preferir bloques estructurados con profesor por bloque
+    const structured = Array.isArray(service.schedule_blocks) && service.schedule_blocks.length > 0
+      ? service.schedule_blocks
+      : (Array.isArray(service.features) && service.features.length > 0 && service.features[0]?.days ? service.features : null);
+
+    if (structured) {
+      return structured.reduce((acc, b) => {
+        if (parseDaysText(b.days).includes(todayKey)) {
+          acc.push({
+            start: b.start,
+            end: b.end,
+            serviceName: service.name,
+            instructorName: b.instructor_name || service.instructor_name || null
+          });
+        }
+        return acc;
+      }, []);
+    }
+
+    if (!service.schedule) return [];
     return service.schedule.split(' | ').reduce((acc, block) => {
       const match = block.match(/^(.*?) de (\d{2}:\d{2}) a (\d{2}:\d{2}) hrs$/);
       if (!match) return acc;
       if (parseDaysText(match[1]).includes(todayKey)) {
-        acc.push({ start: match[2], end: match[3], serviceName: service.name });
+        acc.push({
+          start: match[2],
+          end: match[3],
+          serviceName: service.name,
+          instructorName: service.instructor_name || null
+        });
       }
       return acc;
     }, []);
@@ -836,7 +862,10 @@ export default function Dashboard() {
                             <span style={{ fontSize: '1.4rem' }}>🥋</span>
                             <div>
                               <div style={{ color: 'white', fontWeight: 700, fontSize: '0.9rem' }}>{service.name}</div>
-                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>⏱️ {block.start} – {block.end} hrs</div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
+                                ⏱️ {block.start} – {block.end} hrs
+                                {block.instructorName ? ` • 🥋 ${block.instructorName}` : ''}
+                              </div>
                             </div>
                           </div>
                           {attended ? (
@@ -958,9 +987,16 @@ export default function Dashboard() {
                     {famBlocks.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {famBlocks.map((block, idx) => (
-                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '8px', padding: '10px 14px' }}>
-                            <span style={{ fontSize: '1.1rem' }}>🥋</span>
-                            <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600 }}>⏱️ {block.start} – {block.end} hrs</div>
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '8px', padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>🥋</span>
+                              <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600 }}>⏱️ {block.start} – {block.end} hrs</div>
+                            </div>
+                            {block.instructorName && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--aurora)', fontWeight: 700 }}>
+                                {block.instructorName}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>

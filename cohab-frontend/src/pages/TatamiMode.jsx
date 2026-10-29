@@ -175,36 +175,94 @@ export default function TatamiMode() {
     }
   };
 
+  const getServiceScheduleBlocks = (service) => {
+    if (Array.isArray(service?.schedule_blocks) && service.schedule_blocks.length > 0) {
+      return service.schedule_blocks;
+    }
+    if (Array.isArray(service?.features) && service.features.length > 0 && service.features[0]?.days) {
+      return service.features;
+    }
+    if (service?.schedule) {
+      return service.schedule.split(' | ').map(blockStr => {
+        const match = blockStr.match(/^(.*?) de (\d{2}:\d{2}) a (\d{2}:\d{2}) hrs$/);
+        if (match) {
+          return {
+            days: match[1],
+            start: match[2],
+            end: match[3],
+            instructor_id: service.instructor_id || null,
+            instructor_name: service.instructor_name || null
+          };
+        }
+        return {
+          days: blockStr,
+          start: '20:00',
+          end: '21:30',
+          instructor_id: service.instructor_id || null,
+          instructor_name: service.instructor_name || null
+        };
+      });
+    }
+    return [{
+      days: 'Horario General',
+      start: '20:00',
+      end: '21:30',
+      instructor_id: service?.instructor_id || null,
+      instructor_name: service?.instructor_name || null
+    }];
+  };
+
   const fetchServices = async () => {
     try {
       const { data, error } = await supabase
         .from('cohab_services')
-        .select('id, name, schedule, instructor_id, instructor_name')
+        .select('*')
         .eq('is_active', true)
         .order('name');
         
       if (error) throw error;
-      // El admin ve todos los horarios; el instructor solo los que tiene asignados
-      const visible = isAdmin
-        ? (data || [])
-        : (data || []).filter(s => s.instructor_id === profile?.id);
-      setServices(visible);
-      setSelectedServiceId(visible[0]?.id || '');
+
+      // Expandir cada disciplina en sus bloques horarios para que cada profesor vea sus turnos asignados
+      const expandedSessions = [];
+      (data || []).forEach(s => {
+        const blocks = getServiceScheduleBlocks(s);
+        blocks.forEach((b, idx) => {
+          const blockInstId = b.instructor_id || s.instructor_id || null;
+          const blockInstName = b.instructor_name || s.instructor_name || null;
+          const isAssignedToMe = blockInstId === profile?.id || s.instructor_id === profile?.id;
+
+          if (isAdmin || isAssignedToMe) {
+            expandedSessions.push({
+              id: `${s.id}__${idx}`,
+              service_id: s.id,
+              name: s.name,
+              block_label: b.days && b.start ? `${b.days} (${b.start} a ${b.end} hrs)` : (s.schedule || ''),
+              instructor_id: blockInstId,
+              instructor_name: blockInstName
+            });
+          }
+        });
+      });
+
+      setServices(expandedSessions);
+      const preferred = expandedSessions.find(item => item.instructor_id === profile?.id) || expandedSessions[0];
+      setSelectedServiceId(preferred?.id || '');
     } catch (e) {
       console.error('Error fetching services for tatami:', e);
     }
   };
 
-  const fetchTodayQrCount = async (serviceId) => {
-    const sId = serviceId || selectedServiceId;
-    if (!sId) return;
+  const fetchTodayQrCount = async (optionOrServiceId) => {
+    const rawId = optionOrServiceId || selectedServiceId;
+    if (!rawId) return;
+    const realServiceId = rawId.includes('__') ? rawId.split('__')[0] : rawId;
     try {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
       const { count, error } = await supabase
         .from('cohab_attendance')
         .select('*', { count: 'exact', head: true })
-        .eq('service_id', sId)
+        .eq('service_id', realServiceId)
         .gte('checked_at', startOfToday.toISOString());
         
       if (!error) {
@@ -215,22 +273,23 @@ export default function TatamiMode() {
     }
   };
 
-  const handleGenerateQr = async (serviceId) => {
-    const targetId = serviceId || selectedServiceId;
+  const handleGenerateQr = async (serviceOptionId) => {
+    const targetId = serviceOptionId || selectedServiceId;
     const target = services.find(s => s.id === targetId);
     if (!target) {
       alert('Por favor selecciona una clase/horario para generar el código QR.');
       return;
     }
 
+    const realServiceId = target.service_id || target.id;
     setIsGeneratingQr(true);
     try {
       const todayStr = new Date().toISOString().split('T')[0];
       const payload = JSON.stringify({
         app: 'cohab_bjj',
-        service_id: target.id,
+        service_id: realServiceId,
         date: todayStr,
-        instructor_id: profile?.id || target.instructor_id || null
+        instructor_id: target.instructor_id || profile?.id || null
       });
 
       const url = await QRCode.toDataURL(payload, {
@@ -244,7 +303,7 @@ export default function TatamiMode() {
 
       setQrDataUrl(url);
       setShowQrModal(true);
-      fetchTodayQrCount(target.id);
+      fetchTodayQrCount(realServiceId);
     } catch (err) {
       console.error('Error generating QR:', err);
       alert('No se pudo generar el código QR.');
@@ -503,7 +562,7 @@ export default function TatamiMode() {
             )}
             {services.map(s => (
               <option key={s.id} value={s.id}>
-                {s.name} {s.instructor_name ? `• ${s.instructor_name}` : ''}
+                {s.name} {s.block_label ? `— ${s.block_label}` : ''} {s.instructor_name ? `• ${s.instructor_name}` : ''}
               </option>
             ))}
           </select>
@@ -1003,6 +1062,12 @@ export default function TatamiMode() {
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 900, color: 'white', margin: '4px 0 6px 0' }}>
                 {currentService?.name || 'Clase de Brazilian Jiu-Jitsu'}
               </h2>
+
+              {currentService?.block_label && (
+                <div style={{ fontSize: '0.76rem', color: '#CBD5E1', marginBottom: '4px', fontWeight: 600 }}>
+                  ⏰ {currentService.block_label}
+                </div>
+              )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem', color: '#94A3B8', marginBottom: '18px' }}>
                 <span style={{ color: 'var(--aurora)', fontWeight: 800 }}>A cargo:</span>

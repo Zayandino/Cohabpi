@@ -54,21 +54,86 @@ export default function AdminSchedule() {
   // Editing Mode States
   const [editingServiceId, setEditingServiceId] = useState(null);
 
-  const parseScheduleText = (scheduleText) => {
-    if (!scheduleText) return [{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }];
+  const getInstructorDisplayName = (instId, fallbackName = null) => {
+    if (!instId) return fallbackName;
+    const found = instructors.find(i => i.id === instId);
+    if (found) {
+      return `${found.staff_title || 'Profesor'} ${found.name}`;
+    }
+    return fallbackName;
+  };
+
+  // Extrae los bloques horarios estructurados de un servicio con su profesor por bloque
+  const parseScheduleBlocksFromService = (service) => {
+    if (!service) {
+      return [{ days: 'LUN a VIE', start: '20:00', end: '21:30', instructor_id: '', instructor_name: null }];
+    }
+
+    // 1. Preferir schedule_blocks JSONB si ya está poblado
+    if (Array.isArray(service.schedule_blocks) && service.schedule_blocks.length > 0) {
+      return service.schedule_blocks.map(b => ({
+        days: b.days || 'LUN a VIE',
+        start: b.start || '20:00',
+        end: b.end || '21:30',
+        instructor_id: b.instructor_id ?? service.instructor_id ?? '',
+        instructor_name: b.instructor_name ?? service.instructor_name ?? null
+      }));
+    }
+
+    // 2. Fallback a features JSONB si almacena los bloques con instructor
+    if (Array.isArray(service.features) && service.features.length > 0 && service.features[0]?.days) {
+      return service.features.map(b => ({
+        days: b.days || 'LUN a VIE',
+        start: b.start || '20:00',
+        end: b.end || '21:30',
+        instructor_id: b.instructor_id ?? service.instructor_id ?? '',
+        instructor_name: b.instructor_name ?? service.instructor_name ?? null
+      }));
+    }
+
+    // 3. Fallback a texto plano en service.schedule
+    const scheduleText = service.schedule;
+    if (!scheduleText) {
+      return [{
+        days: 'LUN a VIE',
+        start: '20:00',
+        end: '21:30',
+        instructor_id: service.instructor_id || '',
+        instructor_name: service.instructor_name || null
+      }];
+    }
+
     try {
       const blocks = scheduleText.split(' | ');
       return blocks.map(block => {
         // Formato: "Lunes a Viernes de 20:00 a 21:30 hrs"
         const match = block.match(/^(.*?) de (\d{2}:\d{2}) a (\d{2}:\d{2}) hrs$/);
         if (match) {
-          return { days: match[1], start: match[2], end: match[3] };
+          return {
+            days: match[1],
+            start: match[2],
+            end: match[3],
+            instructor_id: service.instructor_id || '',
+            instructor_name: service.instructor_name || null
+          };
         }
-        return { days: block, start: '20:00', end: '21:30' };
+        return {
+          days: block,
+          start: '20:00',
+          end: '21:30',
+          instructor_id: service.instructor_id || '',
+          instructor_name: service.instructor_name || null
+        };
       });
     } catch (e) {
       console.error("Error parsing schedule:", e);
-      return [{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }];
+      return [{
+        days: 'LUN a VIE',
+        start: '20:00',
+        end: '21:30',
+        instructor_id: service.instructor_id || '',
+        instructor_name: service.instructor_name || null
+      }];
     }
   };
 
@@ -76,8 +141,8 @@ export default function AdminSchedule() {
     setEditingServiceId(service.id);
     setName(service.name);
     
-    // Parse schedules
-    setScheduleBlocks(parseScheduleText(service.schedule));
+    // Parse schedules con sus profesores por bloque
+    setScheduleBlocks(parseScheduleBlocksFromService(service));
     
     // Parse capacity
     if (service.capacity_limit > 0) {
@@ -120,7 +185,7 @@ export default function AdminSchedule() {
   const handleCancelForm = () => {
     setName('');
     setSelectedInstructorId('');
-    setScheduleBlocks([{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }]);
+    setScheduleBlocks([{ days: 'LUN a VIE', start: '20:00', end: '21:30', instructor_id: '', instructor_name: null }]);
     setCapacityType('unlimited');
     setCapacityLimit('12');
     setPricingType('flat');
@@ -137,7 +202,7 @@ export default function AdminSchedule() {
   
   // Dynamic Schedule Blocks
   const [scheduleBlocks, setScheduleBlocks] = useState([
-    { days: 'Lunes a Viernes', start: '20:00', end: '21:30' }
+    { days: 'LUN a VIE', start: '20:00', end: '21:30', instructor_id: '', instructor_name: null }
   ]);
 
   // Capacity Limits
@@ -196,7 +261,10 @@ export default function AdminSchedule() {
 
   // Handlers for Schedule Blocks
   const handleAddBlock = () => {
-    setScheduleBlocks([...scheduleBlocks, { days: 'Sábados', start: '11:30', end: '12:30' }]);
+    setScheduleBlocks([
+      ...scheduleBlocks,
+      { days: 'JUE', start: '20:00', end: '21:30', instructor_id: selectedInstructorId || '', instructor_name: null }
+    ]);
   };
 
   const handleRemoveBlock = (index) => {
@@ -207,6 +275,13 @@ export default function AdminSchedule() {
   const handleBlockChange = (index, field, value) => {
     const updated = scheduleBlocks.map((block, idx) => {
       if (idx === index) {
+        if (field === 'instructor_id') {
+          return {
+            ...block,
+            instructor_id: value,
+            instructor_name: getInstructorDisplayName(value, null)
+          };
+        }
         return { ...block, [field]: value };
       }
       return block;
@@ -241,10 +316,22 @@ export default function AdminSchedule() {
     e.preventDefault();
     if (!name.trim()) return;
 
-    // 1. Consolida los bloques horariales en un texto legible
+    // 1. Consolida los bloques horariales en un texto legible y en un arreglo estructurado con su profesor
     const consolidatedSchedule = scheduleBlocks
       .map(b => `${b.days} de ${b.start} a ${b.end} hrs`)
       .join(' | ');
+
+    const structuredBlocks = scheduleBlocks.map(b => {
+      const effectiveInstId = b.instructor_id || selectedInstructorId || null;
+      const effectiveInstName = getInstructorDisplayName(effectiveInstId, b.instructor_name || null);
+      return {
+        days: b.days,
+        start: b.start,
+        end: b.end,
+        instructor_id: effectiveInstId,
+        instructor_name: effectiveInstName
+      };
+    });
 
     // 2. Determina el precio base y los tiers finales
     let finalPrice = 0;
@@ -262,55 +349,69 @@ export default function AdminSchedule() {
       finalTiers = sortedTiers;
     }
 
-    // 4. Instructor a cargo
-    const assignedInst = instructors.find(i => i.id === selectedInstructorId);
-    const assignedName = assignedInst ? `${assignedInst.staff_title || 'Profesor'} ${assignedInst.name}` : null;
+    // 3. Cupos
+    const finalCapacity = capacityType === 'unlimited' ? 0 : (parseInt(capacityLimit, 10) || 0);
+
+    // 4. Instructor principal y resumen de profesores de los bloques
+    const primaryInstructorId = selectedInstructorId || structuredBlocks.find(b => b.instructor_id)?.instructor_id || null;
+    const uniqueInstructorNames = [...new Set(
+      structuredBlocks.map(b => b.instructor_name).filter(Boolean)
+    )];
+    const primaryInstName = getInstructorDisplayName(selectedInstructorId, null);
+    const summaryInstructorName = uniqueInstructorNames.length > 0
+      ? uniqueInstructorNames.join(' / ')
+      : primaryInstName;
 
     try {
-      const payload = {
+      const basePayload = {
         name,
         price: finalPrice,
         schedule: consolidatedSchedule,
         capacity_limit: finalCapacity,
         requires_attendance: requiresAttendance,
         pricing_tiers: finalTiers,
-        instructor_id: selectedInstructorId || null,
-        instructor_name: assignedName
+        instructor_id: primaryInstructorId,
+        instructor_name: summaryInstructorName,
+        features: structuredBlocks
+      };
+
+      const fullPayload = {
+        ...basePayload,
+        schedule_blocks: structuredBlocks
       };
 
       let error;
       if (editingServiceId) {
-        const res = await supabase
+        let res = await supabase
           .from('cohab_services')
-          .update(payload)
+          .update(fullPayload)
           .eq('id', editingServiceId);
+
+        // Fallback automático si la migración 014 (columna schedule_blocks) aún no se ejecutó en BD
+        if (res.error && (res.error.message?.includes('schedule_blocks') || res.error.code === 'PGRST204')) {
+          res = await supabase
+            .from('cohab_services')
+            .update(basePayload)
+            .eq('id', editingServiceId);
+        }
         error = res.error;
       } else {
-        const res = await supabase
+        let res = await supabase
           .from('cohab_services')
-          .insert([payload]);
+          .insert([fullPayload]);
+
+        if (res.error && (res.error.message?.includes('schedule_blocks') || res.error.code === 'PGRST204')) {
+          res = await supabase
+            .from('cohab_services')
+            .insert([basePayload]);
+        }
         error = res.error;
       }
 
       if (error) throw error;
 
       // Reset Form
-      setName('');
-      setSelectedInstructorId('');
-      setScheduleBlocks([{ days: 'Lunes a Viernes', start: '20:00', end: '21:30' }]);
-      setCapacityType('unlimited');
-      setCapacityLimit('12');
-      setPricingType('flat');
-      setFlatPrice('45000');
-      setPricingTiers([
-        { classesPerWeek: 5, price: '45000' },
-        { classesPerWeek: 4, price: '40000' },
-        { classesPerWeek: 3, price: '35000' }
-      ]);
-      setRequiresAttendance(false);
-      setEditingServiceId(null);
-      setShowAddForm(false);
-      
+      handleCancelForm();
       fetchServices();
     } catch (err) {
       console.error("Error saving service:", err);
@@ -377,7 +478,7 @@ export default function AdminSchedule() {
       <div className="content" style={{ paddingTop: '20px', paddingBottom: '40px' }}>
         
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
-          Configura y administra los horarios y el esquema de precios de tus disciplinas oficiales en Cohab Los Andes.
+          Configura y administra los horarios, profesores por bloque y el esquema de precios de tus disciplinas oficiales en Cohab Los Andes.
         </p>
 
         {showAddForm && (
@@ -401,10 +502,10 @@ export default function AdminSchedule() {
                 />
               </div>
 
-              {/* 1.1 Profesor / Instructor a Cargo */}
+              {/* 1.1 Profesor / Instructor Titular o Por Defecto */}
               <div className="form-group" style={{ marginBottom: '18px' }}>
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🥋</span> Profesor / Instructor a Cargo
+                  <span>🥋</span> Profesor / Maestro Coordinador (Por Defecto)
                 </label>
                 <select 
                   className="form-input" 
@@ -412,7 +513,7 @@ export default function AdminSchedule() {
                   onChange={e => setSelectedInstructorId(e.target.value)}
                   style={{ background: 'var(--bg-elevated)', color: 'white', height: '42px', fontSize: '0.85rem' }}
                 >
-                  <option value="">-- Sin Asignar / Rotativo --</option>
+                  <option value="">-- Múltiples Profesores según Bloque / Rotativo --</option>
                   {instructors.map(inst => (
                     <option key={inst.id} value={inst.id}>
                       {inst.staff_title || 'Profesor'} {inst.name} ({inst.belt})
@@ -420,14 +521,14 @@ export default function AdminSchedule() {
                   ))}
                 </select>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  El profesor o instructor asignado podrá proyectar el código QR de esta clase en el Tatami para asistencia de los alumnos.
+                  Puedes asignar un profesor distinto a cada bloque de días u horario (ej. Mañana, Jueves, etc.) directamente abajo.
                 </span>
               </div>
 
-              {/* 2. Horarios Dinámicos */}
+              {/* 2. Horarios Dinámicos con Profesor por Bloque */}
               <div style={{ marginBottom: '18px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>⏰ Horarios y Bloques</label>
+                  <label className="form-label" style={{ marginBottom: 0 }}>⏰ Horarios y Profesores por Bloque</label>
                   <button 
                     type="button" 
                     onClick={handleAddBlock}
@@ -437,20 +538,48 @@ export default function AdminSchedule() {
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {scheduleBlocks.map((block, idx) => (
                     <div 
                       key={idx} 
                       style={{ 
-                        background: 'rgba(255,255,255,0.01)', 
-                        border: '1px solid rgba(255,255,255,0.05)', 
-                        padding: '10px', 
-                        borderRadius: '8px',
+                        background: 'rgba(255,255,255,0.015)', 
+                        border: '1px solid rgba(255,255,255,0.07)', 
+                        padding: '12px', 
+                        borderRadius: '10px',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '8px'
+                        gap: '10px'
                       }}
                     >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Bloque #{idx + 1}
+                        </span>
+                        {scheduleBlocks.length > 1 && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveBlock(idx)}
+                            style={{ 
+                              background: 'rgba(255,77,77,0.1)', 
+                              color: '#FF6B6B', 
+                              border: 'none', 
+                              borderRadius: '6px', 
+                              padding: '2px 8px',
+                              height: '24px', 
+                              cursor: 'pointer', 
+                              fontWeight: 800,
+                              fontSize: '0.72rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            Eliminar bloque ×
+                          </button>
+                        )}
+                      </div>
+
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -480,7 +609,6 @@ export default function AdminSchedule() {
                                     handleBlockChange(idx, 'days', serialized);
                                   }}
                                   style={{
-                                    border: 'none',
                                     borderRadius: '6px',
                                     padding: '6px 8px',
                                     fontSize: '0.78rem',
@@ -503,32 +631,11 @@ export default function AdminSchedule() {
                             })}
                           </div>
                           <span style={{ fontSize: '0.72rem', color: 'var(--aurora)', fontWeight: 600, marginTop: '2px', display: 'block' }}>
-                            Seleccionado: {block.days || 'Sin especificar'}
+                            Días: {block.days || 'Sin especificar'}
                           </span>
                         </div>
-                        {scheduleBlocks.length > 1 && (
-                          <button 
-                            type="button" 
-                            onClick={() => handleRemoveBlock(idx)}
-                            style={{ 
-                              background: 'rgba(255,77,77,0.1)', 
-                              color: '#FF6B6B', 
-                              border: 'none', 
-                              borderRadius: '6px', 
-                              width: '36px', 
-                              height: '36px', 
-                              cursor: 'pointer', 
-                              fontWeight: 800,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0
-                            }}
-                          >
-                            ×
-                          </button>
-                        )}
                       </div>
+
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>De:</span>
                         <input 
@@ -537,7 +644,7 @@ export default function AdminSchedule() {
                           style={{ flex: 1, fontSize: '0.85rem', height: '36px', textAlign: 'center' }}
                           value={block.start} 
                           onChange={e => handleBlockChange(idx, 'start', e.target.value)} 
-                          placeholder="20:00"
+                          placeholder="08:00 o 20:00"
                           required
                         />
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>A:</span>
@@ -547,10 +654,34 @@ export default function AdminSchedule() {
                           style={{ flex: 1, fontSize: '0.85rem', height: '36px', textAlign: 'center' }}
                           value={block.end} 
                           onChange={e => handleBlockChange(idx, 'end', e.target.value)} 
-                          placeholder="21:30"
+                          placeholder="09:30 o 21:30"
                           required
                         />
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>hrs</span>
+                      </div>
+
+                      {/* Selector de Profesor / Instructor para ESTE bloque */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                        <label style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span>🥋</span> Profesor / Instructor a cargo de este bloque:
+                        </label>
+                        <select
+                          className="form-input"
+                          value={block.instructor_id || ''}
+                          onChange={e => handleBlockChange(idx, 'instructor_id', e.target.value)}
+                          style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px', fontSize: '0.8rem' }}
+                        >
+                          <option value="">
+                            {selectedInstructorId
+                              ? `-- Usar coordinador (${getInstructorDisplayName(selectedInstructorId)}) --`
+                              : '-- Sin asignar / Rotativo --'}
+                          </option>
+                          {instructors.map(inst => (
+                            <option key={inst.id} value={inst.id}>
+                              {inst.staff_title || 'Profesor'} {inst.name} ({inst.belt})
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   ))}
@@ -815,8 +946,18 @@ export default function AdminSchedule() {
             {services.map(s => {
               const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' });
               
-              // Verificar si el horario tiene bloques (separados por |)
-              const scheduleBlocksList = s.schedule ? s.schedule.split(' | ') : [];
+              // Obtener bloques estructurados con su profesor por bloque
+              const parsedBlocks = parseScheduleBlocksFromService(s);
+
+              // Resumen de todos los profesores que imparten algún bloque de esta disciplina
+              const blockInstructors = [...new Set(
+                parsedBlocks
+                  .map(b => getInstructorDisplayName(b.instructor_id, b.instructor_name))
+                  .filter(Boolean)
+              )];
+              const summaryInstructors = blockInstructors.length > 0
+                ? blockInstructors.join(' • ')
+                : s.instructor_name;
 
               // Verificar si tiene tiers de precios
               const hasTiers = s.pricing_tiers && s.pricing_tiers.length > 0;
@@ -889,33 +1030,67 @@ export default function AdminSchedule() {
                     </div>
                   </div>
 
-                  {/* Badge Profesor a Cargo */}
+                  {/* Badge Profesores a Cargo */}
                   <div style={{ 
                     display: 'flex', alignItems: 'center', gap: '8px', 
                     fontSize: '0.78rem', 
-                    background: s.instructor_name ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                    background: summaryInstructors ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                     padding: '6px 12px', 
                     borderRadius: '8px', 
-                    border: s.instructor_name ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
-                    color: s.instructor_name ? 'var(--aurora)' : 'var(--text-muted)'
+                    border: summaryInstructors ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
+                    color: summaryInstructors ? 'var(--aurora)' : 'var(--text-muted)'
                   }}>
                     <span>🥋</span>
                     <span style={{ fontWeight: 800 }}>
-                      {s.instructor_name ? `A cargo: ${s.instructor_name}` : 'Profesor rotativo o por asignar'}
+                      {summaryInstructors ? `Staff a cargo: ${summaryInstructors}` : 'Profesor rotativo o por asignar'}
                     </span>
                   </div>
 
                   <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '10px' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-light)', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                      ⏰ Horario
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-light)', fontWeight: 700, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                      ⏰ Horarios y Profesores por Bloque
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {scheduleBlocksList.map((block, idx) => (
-                        <div key={idx} style={{ fontSize: '0.8rem', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>🥋</span> {block}
-                        </div>
-                      ))}
-                      {scheduleBlocksList.length === 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {parsedBlocks.map((block, idx) => {
+                        const blockInstName = getInstructorDisplayName(block.instructor_id, block.instructor_name);
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              fontSize: '0.8rem',
+                              color: 'white',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              border: '1px solid rgba(255, 255, 255, 0.05)',
+                              padding: '6px 10px',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>⏰</span>
+                              <strong>{block.days}</strong> de {block.start} a {block.end} hrs
+                            </div>
+                            {blockInstName && (
+                              <span style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                color: 'var(--aurora)',
+                                background: 'rgba(52, 211, 153, 0.1)',
+                                border: '1px solid rgba(52, 211, 153, 0.25)',
+                                padding: '2px 8px',
+                                borderRadius: '10px'
+                              }}>
+                                🥋 {blockInstName}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {parsedBlocks.length === 0 && (
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No definido</div>
                       )}
                     </div>
