@@ -177,6 +177,8 @@ export default function AdminSchedule() {
         .from('cohab_profiles')
         .select('id, name, belt, graus, staff_title, role')
         .or('is_instructor.eq.true,role.in.(admin,teacher,instructor,monitor)')
+        .not('name', 'is', null)
+        .neq('name', '')
         .order('staff_order', { ascending: true, nullsFirst: false })
         .order('name', { ascending: true });
 

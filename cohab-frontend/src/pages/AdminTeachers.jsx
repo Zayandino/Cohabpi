@@ -68,6 +68,8 @@ export default function AdminTeachers() {
         .from('cohab_profiles')
         .select('id, name, email, belt, graus, role, is_instructor, staff_title, staff_order')
         .or('is_instructor.eq.true,role.in.(admin,teacher,instructor,monitor)')
+        .not('name', 'is', null)
+        .neq('name', '')
         .order('staff_order', { ascending: true, nullsFirst: false })
         .order('name', { ascending: true });
         
@@ -88,6 +90,8 @@ export default function AdminTeachers() {
         .from('cohab_profiles')
         .select('id, name, email, belt, graus, role, is_instructor, staff_title')
         .in('belt', ['purple', 'brown', 'black', 'morado', 'marron', 'cafe', 'negro'])
+        .not('name', 'is', null)
+        .neq('name', '')
         .order('name', { ascending: true });
         
       if (error) throw error;

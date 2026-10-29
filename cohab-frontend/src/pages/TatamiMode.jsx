@@ -12,6 +12,7 @@ import {
 export default function TatamiMode() {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = profile?.role === 'admin';
 
   const [loading, setLoading] = useState(true);
   const [selectedGroup, setSelectedGroup] = useState('todos'); // 'todos' | 'sub8' | 'infantil' | 'adolescente' | 'adulto'
@@ -35,6 +36,14 @@ export default function TatamiMode() {
   const [parentNotified, setParentNotified] = useState(false);
   const [savingIncident, setSavingIncident] = useState(false);
   const [incidentSuccess, setIncidentSuccess] = useState(false);
+
+  // Quita perfiles sin nombre y los que no pertenecen al grupo seleccionado
+  const cleanRoster = (rows) => (rows || []).filter(r => {
+    const hasName = r.name && r.name.trim() && r.name !== 'Sin nombre';
+    if (!hasName) return false;
+    if (selectedGroup === 'todos') return true;
+    return r.age_group === selectedGroup;
+  });
 
   // Cargar roster de alumnos y asistencias de hoy
   const fetchRoster = async () => {
@@ -90,7 +99,8 @@ export default function TatamiMode() {
 
         rosterData = (profiles || []).map(p => {
           // Grupo de edad
-          let ageGroup = 'adulto';
+          // Sin fecha de nacimiento no se puede clasificar: solo aparece en 'Todos'
+          let ageGroup = 'sin_edad';
           if (p.birthdate) {
             const birth = new Date(p.birthdate);
             const today = new Date();
@@ -138,13 +148,9 @@ export default function TatamiMode() {
           };
         });
 
-        // Filtrar por grupo si no es 'todos'
-        if (selectedGroup !== 'todos') {
-          rosterData = rosterData.filter(r => r.age_group === selectedGroup);
-        }
       }
 
-      setStudents(rosterData || []);
+      setStudents(cleanRoster(rosterData));
 
       // 2. Cargar asistencias de hoy en cohab_attendance
       const startOfToday = new Date();
@@ -177,11 +183,13 @@ export default function TatamiMode() {
         .eq('is_active', true)
         .order('name');
         
-      if (!error && data && data.length > 0) {
-        setServices(data);
-        const mine = data.find(s => s.instructor_id === profile?.id);
-        setSelectedServiceId(mine ? mine.id : data[0].id);
-      }
+      if (error) throw error;
+      // El admin ve todos los horarios; el instructor solo los que tiene asignados
+      const visible = isAdmin
+        ? (data || [])
+        : (data || []).filter(s => s.instructor_id === profile?.id);
+      setServices(visible);
+      setSelectedServiceId(visible[0]?.id || '');
     } catch (e) {
       console.error('Error fetching services for tatami:', e);
     }
@@ -477,8 +485,9 @@ export default function TatamiMode() {
               fetchTodayQrCount(e.target.value);
             }}
             style={{
-              flex: 1,
-              minWidth: '200px',
+              flex: '1 1 100%',
+              minWidth: 0,
+              width: '100%',
               height: '42px',
               background: 'rgba(5, 11, 20, 0.85)',
               border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -489,6 +498,9 @@ export default function TatamiMode() {
               fontWeight: 600
             }}
           >
+            {services.length === 0 && (
+              <option value="">No tienes horarios asignados</option>
+            )}
             {services.map(s => (
               <option key={s.id} value={s.id}>
                 {s.name} {s.instructor_name ? `• ${s.instructor_name}` : ''}
@@ -501,6 +513,8 @@ export default function TatamiMode() {
             onClick={() => handleGenerateQr()}
             disabled={isGeneratingQr || !selectedServiceId}
             style={{
+              flex: '1 1 100%',
+              justifyContent: 'center',
               height: '42px',
               padding: '0 18px',
               background: 'linear-gradient(135deg, var(--aurora), #10B981)',
@@ -532,11 +546,9 @@ export default function TatamiMode() {
       {/* Selector de Grupos Horarios */}
       <div style={{
         display: 'flex',
+        flexWrap: 'wrap',
         gap: '6px',
-        overflowX: 'auto',
-        paddingBottom: '8px',
-        marginBottom: '16px',
-        scrollbarWidth: 'none'
+        marginBottom: '16px'
       }}>
         {[
           { id: 'todos', label: 'Todos', color: '#00B4D8' },

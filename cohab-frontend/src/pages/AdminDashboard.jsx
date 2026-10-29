@@ -203,6 +203,8 @@ export default function AdminDashboard() {
       const { data, error } = await supabase
         .from('cohab_profiles')
         .select('id, name, email, belt, graus, parent_id, scholarship_percent')
+        .not('name', 'is', null)
+        .neq('name', '')
         .order('name', { ascending: true })
         .limit(50);
 
@@ -231,6 +233,8 @@ export default function AdminDashboard() {
       const { data, error } = await supabase
         .from('cohab_profiles')
         .select('id, name, email, belt, graus, parent_id, scholarship_percent')
+        .not('name', 'is', null)
+        .neq('name', '')
         .or(`name.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%`)
         .limit(10);
 
