@@ -21,3 +21,17 @@ Scripts SQL históricos, ordenados por la **fecha en que se agregaron al reposit
 > - Tablas: `cohab_seasons`, `cohab_health_records`, `cohab_emergency_contacts`, `cohab_documents`, `cohab_consents`, `cohab_incidents`, `cohab_legacy_forms`.
 > - Vistas: `cohab_student_status` (consolidación en tiempo real del estado de cada alumno: `prueba`, `vigente`, `por_vencer`, `vencido`, `revision`, `restringido`).
 > - Funciones y Triggers: `cohab_is_instructor()`, `cohab_get_tatami_roster()`, `trg_auto_approve_consent()`.
+
+## Infra: parche Kong (login)
+
+En el VPS, ruta `auth-v1-all` de `volumes/api/kong.yml` (compose `cohab-los-andes-supabase-dww5gh`) requiere:
+
+```yaml
+        hosts:
+          - api.cohablosandes.cloud
+          - kong
+          - localhost
+```
+
+Sin esto el login falla. Si Dokploy regenera el compose, volver a aplicarlo y ejecutar `kong reload`. Backup: `kong.yml.bak`.
+
