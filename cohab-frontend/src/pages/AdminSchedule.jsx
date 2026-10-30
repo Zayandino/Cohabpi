@@ -260,11 +260,21 @@ export default function AdminSchedule() {
   }, []);
 
   // Handlers for Schedule Blocks
-  const handleAddBlock = () => {
-    setScheduleBlocks([
-      ...scheduleBlocks,
-      { days: 'JUE', start: '20:00', end: '21:30', instructor_id: selectedInstructorId || '', instructor_name: null }
-    ]);
+  const handleAddBlock = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    setScheduleBlocks(prev => {
+      const next = [
+        ...prev,
+        { days: 'JUE', start: '20:00', end: '21:30', instructor_id: '', instructor_name: null }
+      ];
+      // Scroll to the newly added block so the user sees it
+      setTimeout(() => {
+        const el = document.getElementById(`schedule-block-${next.length - 1}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+      return next;
+    });
   };
 
   const handleRemoveBlock = (index) => {
@@ -531,8 +541,9 @@ export default function AdminSchedule() {
                   <label className="form-label" style={{ marginBottom: 0 }}>⏰ Horarios y Profesores por Bloque</label>
                   <button 
                     type="button" 
+                    id="add-schedule-block-btn"
                     onClick={handleAddBlock}
-                    style={{ background: 'rgba(52, 211, 153, 0.1)', color: 'var(--aurora)', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
+                    style={{ position: 'relative', zIndex: 5, flexShrink: 0, background: 'rgba(52, 211, 153, 0.1)', color: 'var(--aurora)', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
                   >
                     + Agregar Bloque
                   </button>
@@ -542,6 +553,7 @@ export default function AdminSchedule() {
                   {scheduleBlocks.map((block, idx) => (
                     <div 
                       key={idx} 
+                      id={`schedule-block-${idx}`}
                       style={{ 
                         background: 'rgba(255,255,255,0.015)', 
                         border: '1px solid rgba(255,255,255,0.07)', 
