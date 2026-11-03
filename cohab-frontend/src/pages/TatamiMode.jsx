@@ -66,7 +66,7 @@ export default function TatamiMode() {
       if (!rosterData) {
         const { data: profiles, error: pErr } = await supabase
           .from('cohab_profiles')
-          .select('id, name, belt, graus, birthdate, status, trial_classes_used, max_trial_classes')
+          .select('id, name, belt, graus, birthdate, status, trial_classes_used, max_trial_classes, scholarship_percent')
           .order('name', { ascending: true });
 
         if (pErr) throw pErr;
@@ -120,11 +120,15 @@ export default function TatamiMode() {
 
           // Estado del alumno
           let studentStatus = 'prueba';
+          let localScholarships = {};
+          try { localScholarships = JSON.parse(localStorage.getItem('cohab_scholarships') || '{}'); } catch(e){}
+          const isScholarship100 = p.scholarship_percent === 100 || localScholarships[p.id] === 100;
+
           if (inc) {
             studentStatus = 'restringido';
           } else if (h?.risk_level === 'red' && !h?.certificate_verified) {
             studentStatus = 'revision';
-          } else if (sub) {
+          } else if (isScholarship100 || sub) {
             studentStatus = 'vigente';
           } else if ((p.trial_classes_used || 0) < (p.max_trial_classes || 2)) {
             studentStatus = 'prueba';

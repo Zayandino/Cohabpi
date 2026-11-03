@@ -49,6 +49,26 @@ export default function RegistrationFlow() {
 
   // 7. Resultado de Registro
   const [registeredSummary, setRegisteredSummary] = useState(null);
+  const [servicesList, setServicesList] = useState([]);
+
+  // Cargar servicios y bloques horarios reales desde cohab_services
+  useEffect(() => {
+    const fetchActiveServices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('cohab_services')
+          .select('*')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        if (!error && data) {
+          setServicesList(data);
+        }
+      } catch (err) {
+        console.error('Error cargando horarios en registro:', err);
+      }
+    };
+    fetchActiveServices();
+  }, []);
 
   // Precargar datos del perfil existente del titular
   useEffect(() => {
@@ -126,7 +146,25 @@ export default function RegistrationFlow() {
     setHasSignature(false);
   };
 
-  // Cálculo de Grupo Etario según fecha de nacimiento
+  // Formatea los bloques horarios reales de un servicio de cohab_services
+  const formatDynamicServiceSchedule = (service, fallbackSchedule) => {
+    if (!service) return fallbackSchedule;
+    const blocks = Array.isArray(service.schedule_blocks) && service.schedule_blocks.length > 0
+      ? service.schedule_blocks
+      : (Array.isArray(service.features) && service.features.length > 0 && service.features[0]?.days ? service.features : null);
+
+    if (blocks && blocks.length > 0) {
+      return blocks
+        .map(b => {
+          const inst = b.instructor_name ? ` (${b.instructor_name})` : '';
+          return `${b.days} ${b.start}–${b.end} hrs${inst}`;
+        })
+        .join(' | ');
+    }
+    return service.schedule || fallbackSchedule;
+  };
+
+  // Cálculo de Grupo Etario según fecha de nacimiento sincronizado con cohab_services
   const calculateAgeGroup = (birthdate) => {
     if (!birthdate) return null;
     const birth = new Date(birthdate);
@@ -135,10 +173,45 @@ export default function RegistrationFlow() {
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
 
-    if (age < 8) return { code: 'sub8', name: 'Grupo A: Sub-8 (Hasta 7 años)', schedule: 'Ma, Mi, Ju (45 min)', color: '#00B4D8' };
-    if (age <= 13) return { code: 'infantil', name: 'Grupo B: Infantil (8–13 años)', schedule: 'Lu a Vi (60 min)', color: '#F59E0B' };
-    if (age <= 17) return { code: 'adolescente', name: 'Grupo C: Jóvenes (14–17 años)', schedule: 'Lu a Sá en clase adultos (60 min)', color: '#EC4899' };
-    return { code: 'adulto', name: 'Grupo D: Adultos (18+ años)', schedule: 'Lu a Sá (60 min)', color: '#10B981' };
+    const kidsService = servicesList.find(s => {
+      const n = (s.name || '').toLowerCase();
+      return n.includes('kids') || n.includes('infantil') || n.includes('niños') || n.includes('sub');
+    });
+    const adultService = servicesList.find(s => {
+      const n = (s.name || '').toLowerCase();
+      return n.includes('general') || n.includes('adulto') || (n.includes('bjj') && !n.includes('kids') && !n.includes('infantil') && !n.includes('seminario'));
+    });
+
+    if (age < 8) {
+      return {
+        code: 'sub8',
+        name: `Grupo A: Sub-8 (${kidsService?.name || 'Hasta 7 años'})`,
+        schedule: formatDynamicServiceSchedule(kidsService, 'Ma, Mi, Ju (45 min)'),
+        color: '#00B4D8'
+      };
+    }
+    if (age <= 13) {
+      return {
+        code: 'infantil',
+        name: `Grupo B: Infantil (${kidsService?.name || '8–13 años'})`,
+        schedule: formatDynamicServiceSchedule(kidsService, 'Lu a Vi (60 min)'),
+        color: '#F59E0B'
+      };
+    }
+    if (age <= 17) {
+      return {
+        code: 'adolescente',
+        name: `Grupo C: Jóvenes (${adultService?.name || '14–17 años'})`,
+        schedule: formatDynamicServiceSchedule(adultService, 'Lu a Sá en clase adultos (60 min)'),
+        color: '#EC4899'
+      };
+    }
+    return {
+      code: 'adulto',
+      name: `Grupo D: Adultos (${adultService?.name || '18+ años'})`,
+      schedule: formatDynamicServiceSchedule(adultService, 'Lu a Sá (60 min)'),
+      color: '#10B981'
+    };
   };
 
   // Manejo de Alumnos Dependientes
@@ -635,6 +708,33 @@ export default function RegistrationFlow() {
                   onChange={e => setTitularBirthdate(e.target.value)} 
                 />
               </div>
+
+              {(trainingMode === 'adult_only' || trainingMode === 'both') && titularBirthdate && (() => {
+                const titularGrp = calculateAgeGroup(titularBirthdate);
+                if (!titularGrp) return null;
+                return (
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: `${titularGrp.color}15`,
+                    border: `1px solid ${titularGrp.color}40`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <Award size={16} color={titularGrp.color} />
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: titularGrp.color }}>
+                        {titularGrp.name}
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Horario oficial: {titularGrp.schedule}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Sección de Hijos / Dependientes si aplica */}

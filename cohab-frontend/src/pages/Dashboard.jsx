@@ -41,6 +41,7 @@ export default function Dashboard() {
   const paymentBanner = PAYMENT_BANNERS[pagoStatus] || null;
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [totalAttendanceCount, setTotalAttendanceCount] = useState(0);
   const [hasActiveMembership, setHasActiveMembership] = useState(false);
   const [familyProfiles, setFamilyProfiles] = useState([]);
   // Selector de miembro: 'main' = titular, o el id de un familiar
@@ -78,6 +79,18 @@ export default function Dashboard() {
 
       if (error) throw error;
       setAttendanceRecords(data || []);
+
+      // Consultar total histórico de asistencias para cálculo real de progreso de grado
+      const { count: totalCount, error: countErr } = await supabase
+        .from('cohab_attendance')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', profileId);
+
+      if (!countErr && typeof totalCount === 'number') {
+        setTotalAttendanceCount(totalCount);
+      } else {
+        setTotalAttendanceCount((data || []).length);
+      }
     } catch (err) {
       console.error("Error fetching attendance:", err);
     }
@@ -97,8 +110,12 @@ export default function Dashboard() {
       
       const nowStr = new Date().toISOString().split('T')[0];
       // Encontrar suscripción activa y guardar su service_id para el horario
+      let localScholarships = {};
+      try { localScholarships = JSON.parse(localStorage.getItem('cohab_scholarships') || '{}'); } catch(e){}
+      const isSelfScholarship100 = profile.scholarship_percent === 100 || localScholarships[profile.id] === 100;
+
       const activeSelfSub = subsData?.find(s => !s.end_date || s.end_date >= nowStr) || null;
-      setHasActiveMembership(!!activeSelfSub);
+      setHasActiveMembership(isSelfScholarship100 || !!activeSelfSub);
       setSelfActiveSub(activeSelfSub);
 
       // 2. Si el perfil logueado es titular (no tiene parent_id), cargar familiares
@@ -604,49 +621,61 @@ export default function Dashboard() {
           if (!showBelt) return null;
 
           const getBeltInfo = (beltVal) => {
-            if (!beltVal) return { className: 'belt-white', name: 'Cinturón Blanco' };
+            if (!beltVal) return { className: 'belt-white', name: 'Cinturón Blanco', targetBeltName: 'Cinturón Azul', targetClasses: 150 };
             const val = beltVal.toLowerCase();
-            if (val.includes('white') || val.includes('blanco')) return { className: 'belt-white', name: 'Cinturón Blanco' };
-            if (val.includes('blue') || val.includes('azul')) return { className: 'belt-blue', name: 'Cinturón Azul' };
-            if (val.includes('purple') || val.includes('morado')) return { className: 'belt-purple', name: 'Cinturón Morado' };
-            if (val.includes('brown') || val.includes('marrón') || val.includes('marron')) return { className: 'belt-brown', name: 'Cinturón Marrón' };
-            if (val.includes('black') || val.includes('negro')) return { className: 'belt-black', name: 'Cinturón Negro' };
-            return { className: 'belt-white', name: beltVal.charAt(0).toUpperCase() + beltVal.slice(1) };
+            if (val.includes('white') || val.includes('blanco')) return { className: 'belt-white', name: 'Cinturón Blanco', targetBeltName: 'Cinturón Azul', targetClasses: 150 };
+            if (val.includes('blue') || val.includes('azul')) return { className: 'belt-blue', name: 'Cinturón Azul', targetBeltName: 'Cinturón Morado', targetClasses: 175 };
+            if (val.includes('purple') || val.includes('morado')) return { className: 'belt-purple', name: 'Cinturón Morado', targetBeltName: 'Cinturón Marrón', targetClasses: 150 };
+            if (val.includes('brown') || val.includes('marrón') || val.includes('marron') || val.includes('cafe')) return { className: 'belt-brown', name: 'Cinturón Marrón', targetBeltName: 'Cinturón Negro', targetClasses: 125 };
+            if (val.includes('black') || val.includes('negro')) return { className: 'belt-black', name: 'Cinturón Negro', targetBeltName: 'Faixa Preta', targetClasses: 600 };
+            return { className: 'belt-white', name: beltVal.charAt(0).toUpperCase() + beltVal.slice(1), targetBeltName: 'Siguiente Cinturón', targetClasses: 150 };
           };
 
           const beltInfo = getBeltInfo(selectedProfile?.belt);
-          const numGraus = parseInt(selectedProfile?.graus) || 0;
+          const isBlackBelt = beltInfo.className === 'belt-black';
+          const targetClasses = beltInfo.targetClasses || 150;
+          
+          // Progreso hacia el siguiente cinturón
+          const progressPercent = isBlackBelt
+            ? 100
+            : Math.min(100, Math.round((totalAttendanceCount / targetClasses) * 100));
 
           return (
             <div id="rank-center" className="rank-display-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <span className="metric-label" style={{ marginBottom: '2px' }}>Grado Actual</span>
+                  <span className="metric-label" style={{ marginBottom: '2px' }}>Graduación Actual</span>
                   <h3 id="current-belt-name" style={{ fontFamily: 'var(--font-display)', fontWeight: 900, color: 'white', fontSize: '1.1rem' }}>
                     {beltInfo.name}
                   </h3>
                 </div>
-                <div id="current-graus-text" style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  {numGraus} {numGraus === 1 ? 'Grau' : 'Graus'}
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--aurora)', textTransform: 'uppercase', background: 'rgba(0, 180, 216, 0.1)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(0, 180, 216, 0.2)' }}>
+                  🥋 BJJ Oficial (Desde 16 años)
                 </div>
               </div>
 
-              {/* Dynamic BJJ Belt using CSS legacy classes */}
+              {/* Cinturón BJJ dinámico oficial (grados en pausa visual) */}
               <div id="belt-preview" className={`belt-visual ${beltInfo.className}`}>
                 <div className="belt-tip">
-                  {Array.from({ length: numGraus }).map((_, idx) => (
-                    <div key={idx} className="grau-stripe"></div>
-                  ))}
+                  {/* Grados en cinturón pospuestos para más adelante */}
                 </div>
               </div>
 
               <div className="progress-container">
                 <div className="progress-labels">
-                  <span>Progreso a Siguiente Grado</span>
-                  <span id="progress-percent-text">15%</span>
+                  <span>
+                    {isBlackBelt 
+                      ? 'Faixa Preta Oficial — Maestría Alcanzada' 
+                      : `Progreso hacia ${beltInfo.targetBeltName} (${totalAttendanceCount}/${targetClasses} clases)`}
+                  </span>
+                  <span id="progress-percent-text">{progressPercent}%</span>
                 </div>
                 <div className="progress-bar-bg">
-                  <div id="rank-progress-fill" className="progress-fill" style={{ width: '15%' }}></div>
+                  <div id="rank-progress-fill" className="progress-fill" style={{ width: `${progressPercent}%`, transition: 'width 0.4s ease' }}></div>
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                  <span>Asistencias acumuladas: <strong style={{ color: 'white' }}>{totalAttendanceCount} clases</strong></span>
+                  <span>Permanencia estimada: <strong style={{ color: 'var(--aurora)' }}>~{Math.round((targetClasses / 60) * 10) / 10} años (~6 meses/grado)</strong></span>
                 </div>
               </div>
             </div>

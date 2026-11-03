@@ -52,6 +52,33 @@ export default function AdminDashboard() {
   // SCHOLARSHIPS STATE
   const [userScholarship, setUserScholarship] = useState(0); // 0, 25, 50, 75, 100
   const [updatingScholarship, setUpdatingScholarship] = useState(false);
+  // --- Estados de Membresías, Pagos y Asistencias ---
+  const [membershipSubTab, setMembershipSubTab] = useState('status'); // 'status' | 'payment' | 'attendance'
+  const [allProfiles, setAllProfiles] = useState([]);
+  const [allServices, setAllServices] = useState([]);
+  const [allSubscriptions, setAllSubscriptions] = useState([]);
+  const [monthPayments, setMonthPayments] = useState([]);
+  const [loadingMemberships, setLoadingMemberships] = useState(false);
+  const [memberFilter, setMemberFilter] = useState('todos'); // 'todos' | 'vigente' | 'vencido' | 'beca' | 'prueba'
+  const [memberSearch, setMemberSearch] = useState('');
+  
+  // Formulario de Pago Manual
+  const [payStudentId, setPayStudentId] = useState('');
+  const [payServiceId, setPayServiceId] = useState('');
+  const [payMonths, setPayMonths] = useState('1');
+  const [payMethod, setPayMethod] = useState('transferencia');
+  const [payAmount, setPayAmount] = useState('45000');
+  const [savingManualPayment, setSavingManualPayment] = useState(false);
+
+  // Reporte de Asistencia
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [selectedInstructorFilter, setSelectedInstructorFilter] = useState('all');
+  const [monthlyAttendances, setMonthlyAttendances] = useState([]);
+  const [loadingAttendanceReport, setLoadingAttendanceReport] = useState(false);
+
+  // Asistencias del alumno seleccionado en la sección Grados (para sugerencia al Admin)
+  const [selectedUserAttendanceCount, setSelectedUserAttendanceCount] = useState(0);
+  const [loadingUserAttendance, setLoadingUserAttendance] = useState(false);
 
   // TOAST NOTIFICATIONS
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -73,6 +100,8 @@ export default function AdminDashboard() {
     } else if (activeTab === 'grades' || activeTab === 'scholarships') {
       // Carga automática de todos los usuarios para que el admin pueda asignarse a sí mismo
       fetchInitialUsers();
+    } else if (activeTab === 'memberships') {
+      fetchMembershipsOverview();
     }
   }, [activeTab]);
 
@@ -84,6 +113,8 @@ export default function AdminDashboard() {
         const { data: existing } = await supabase
           .from('cohab_services')
           .select('name');
+
+        if (existing && existing.length > 0) return;
 
         const existingNames = (existing || []).map(s => s.name.toLowerCase());
 
@@ -500,10 +531,22 @@ export default function AdminDashboard() {
   };
 
   // 4. ASSIGN GRADES LOGIC
-  const handleSelectUserForGrades = (user) => {
+  const handleSelectUserForGrades = async (user) => {
     setSelectedUser(user);
     setUserBelt(user.belt || 'white');
     setUserGraus(user.graus || 0);
+    try {
+      setLoadingUserAttendance(true);
+      const { count, error } = await supabase
+        .from('cohab_attendance')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', user.id);
+      setSelectedUserAttendanceCount(error ? 0 : (count || 0));
+    } catch (e) {
+      setSelectedUserAttendanceCount(0);
+    } finally {
+      setLoadingUserAttendance(false);
+    }
   };
 
   const handleUpdateUserGrade = async () => {
@@ -583,6 +626,29 @@ export default function AdminDashboard() {
         console.warn("Aviso: Ocurrió un error en Supabase, usando persistencia en localStorage:", dbErr);
       }
 
+      // Si la beca es 100%, auto-activar membresía indefinida en cohab_subscriptions
+      if (parseInt(userScholarship, 10) === 100) {
+        try {
+          const farFuture = '2099-12-31';
+          const todayStr = new Date().toISOString().split('T')[0];
+          await supabase.from('cohab_profiles').update({ status: 'activo' }).eq('id', selectedUser.id);
+          
+          // Obtener primer servicio activo
+          const { data: srvs } = await supabase.from('cohab_services').select('id').eq('is_active', true).limit(1);
+          const defaultServiceId = srvs?.[0]?.id || null;
+
+          await supabase.from('cohab_subscriptions').upsert([{
+            profile_id: selectedUser.id,
+            service_id: defaultServiceId,
+            status: 'active',
+            start_date: todayStr,
+            end_date: farFuture
+          }], { onConflict: 'profile_id,service_id' });
+        } catch (subErr) {
+          console.warn('Auto-activación de suscripción 100% beca:', subErr);
+        }
+      }
+
       showToast(`¡Beca del ${userScholarship}% asignada con éxito para ${selectedUser.name}!`, 'success');
       setSearchResults(prev => prev.map(u => u.id === selectedUser.id ? { ...u, scholarship_percent: parseInt(userScholarship, 10) } : u));
       setSelectedUser(prev => ({ ...prev, scholarship_percent: parseInt(userScholarship, 10) }));
@@ -591,6 +657,193 @@ export default function AdminDashboard() {
       showToast("Error al asignar beca.", 'error');
     } finally {
       setUpdatingScholarship(false);
+    }
+  };
+
+  // 6. CONTROL DE MEMBRESÍAS, PAGOS MANUALES Y REPORTE DE ASISTENCIAS
+  const fetchMembershipsOverview = async () => {
+    try {
+      setLoadingMemberships(true);
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // 1. Perfiles con nombre válido
+      const { data: profilesData, error: pErr } = await supabase
+        .from('cohab_profiles')
+        .select('id, name, email, belt, graus, role, is_instructor, staff_title, status, scholarship_percent, trial_classes_used, max_trial_classes')
+        .not('name', 'is', null)
+        .neq('name', '')
+        .order('name', { ascending: true });
+      if (pErr) throw pErr;
+
+      // 2. Servicios activos
+      const { data: servicesData } = await supabase
+        .from('cohab_services')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      // 3. Suscripciones activas
+      const { data: subsData } = await supabase
+        .from('cohab_subscriptions')
+        .select('id, profile_id, service_id, status, start_date, end_date')
+        .eq('status', 'active')
+        .order('end_date', { ascending: false });
+
+      // 4. Pagos del mes actual
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const { data: paymentsData } = await supabase
+        .from('cohab_payments')
+        .select('id, profile_id, amount, status, payment_method, payment_date')
+        .eq('status', 'approved')
+        .gte('payment_date', startOfMonth.toISOString())
+        .order('payment_date', { ascending: false });
+
+      let localScholarships = {};
+      try {
+        localScholarships = JSON.parse(localStorage.getItem('cohab_scholarships') || '{}');
+      } catch (e) {}
+
+      const enrichedProfiles = (profilesData || [])
+        .filter(p => p.name.trim() !== 'Sin nombre')
+        .map(p => {
+          const scholarship = localScholarships[p.id] !== undefined ? localScholarships[p.id] : (p.scholarship_percent || 0);
+          const userSubs = (subsData || []).filter(s => s.profile_id === p.id);
+          const activeSub = userSubs.find(s => !s.end_date || s.end_date >= todayStr) || null;
+          const latestSub = userSubs[0] || null;
+          const subService = (servicesData || []).find(srv => srv.id === (activeSub?.service_id || latestSub?.service_id));
+
+          let computedStatus = 'vencido';
+          if (scholarship === 100) {
+            computedStatus = 'beca';
+          } else if (activeSub) {
+            computedStatus = 'vigente';
+          } else if ((p.trial_classes_used || 0) < (p.max_trial_classes || 2) && !latestSub) {
+            computedStatus = 'prueba';
+          }
+
+          return {
+            ...p,
+            scholarship_percent: scholarship,
+            activeSub,
+            latestSub,
+            serviceName: subService?.name || null,
+            computedStatus
+          };
+        });
+
+      setAllProfiles(enrichedProfiles);
+      setAllServices(servicesData || []);
+      setAllSubscriptions(subsData || []);
+      setMonthPayments(paymentsData || []);
+
+      if (!payServiceId && servicesData && servicesData.length > 0) {
+        setPayServiceId(servicesData[0].id);
+        setPayAmount(String(servicesData[0].price || 45000));
+      }
+    } catch (err) {
+      console.error('Error cargando resumen de membresías:', err);
+      showToast('Error al cargar estado de membresías.', 'error');
+    } finally {
+      setLoadingMemberships(false);
+    }
+  };
+
+  const handleRegisterManualPayment = async (e) => {
+    e.preventDefault();
+    if (!payStudentId || !payServiceId) {
+      showToast('Selecciona el alumno y la disciplina.', 'error');
+      return;
+    }
+
+    try {
+      setSavingManualPayment(true);
+      const months = Math.max(1, parseInt(payMonths, 10) || 1);
+      const amount = Math.max(0, parseFloat(payAmount) || 0);
+
+      // Buscar si tiene suscripción vigente para encadenar fecha de término
+      const today = new Date();
+      const { data: currentSub } = await supabase
+        .from('cohab_subscriptions')
+        .select('end_date')
+        .eq('profile_id', payStudentId)
+        .eq('service_id', payServiceId)
+        .eq('status', 'active')
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const activeEnd = currentSub?.end_date ? new Date(currentSub.end_date) : null;
+      const startDate = activeEnd && activeEnd > today ? new Date(activeEnd) : new Date(today);
+      const endDate = new Date(startDate);
+      endDate.setUTCMonth(endDate.getUTCMonth() + months);
+
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      // Insertar pago aprobado en cohab_payments
+      const { error: payErr } = await supabase
+        .from('cohab_payments')
+        .insert([{
+          profile_id: payStudentId,
+          amount,
+          status: 'approved',
+          payment_method: payMethod,
+          payment_date: new Date().toISOString()
+        }]);
+      if (payErr) throw payErr;
+
+      // Activar perfil en cohab_profiles
+      await supabase
+        .from('cohab_profiles')
+        .update({ status: 'activo' })
+        .eq('id', payStudentId);
+
+      // Crear suscripción activa en cohab_subscriptions
+      const { error: subErr } = await supabase
+        .from('cohab_subscriptions')
+        .insert([{
+          profile_id: payStudentId,
+          service_id: payServiceId,
+          status: 'active',
+          start_date: startDateStr,
+          end_date: endDateStr
+        }]);
+      if (subErr) throw subErr;
+
+      const studentObj = allProfiles.find(p => p.id === payStudentId);
+      showToast(`¡Pago manual (${payMethod}) y membresía hasta ${endDateStr} registrados para ${studentObj?.name || 'el alumno'}!`, 'success');
+      setMembershipSubTab('status');
+      fetchMembershipsOverview();
+    } catch (err) {
+      console.error('Error registrando pago manual:', err);
+      showToast(err?.message || 'Error al registrar pago manual.', 'error');
+    } finally {
+      setSavingManualPayment(false);
+    }
+  };
+
+  const fetchMonthlyAttendanceReport = async (monthStr = selectedMonth) => {
+    try {
+      setLoadingAttendanceReport(true);
+      const [year, month] = (monthStr || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+      const startOfPeriod = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+      const endOfPeriod = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+
+      const { data, error } = await supabase
+        .from('cohab_attendance')
+        .select('*')
+        .gte('checked_at', startOfPeriod.toISOString())
+        .lte('checked_at', endOfPeriod.toISOString())
+        .order('checked_at', { ascending: false });
+
+      if (error) throw error;
+      setMonthlyAttendances(data || []);
+    } catch (err) {
+      console.error('Error cargando reporte mensual de asistencias:', err);
+    } finally {
+      setLoadingAttendanceReport(false);
     }
   };
 
@@ -656,6 +909,7 @@ export default function AdminDashboard() {
           {activeTab === 'benefits' && 'Galería de Beneficios'}
           {activeTab === 'grades' && 'Asignación de Grados'}
           {activeTab === 'scholarships' && 'Asignación de Becas'}
+          {activeTab === 'memberships' && 'Membresías, Pagos y Asistencias'}
         </div>
       </div>
 
@@ -779,6 +1033,30 @@ export default function AdminDashboard() {
                 <div>
                   <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800 }}>Asignación de Grados</h4>
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.75rem', lineHeight: 1.3 }}>Modifica cinturones y graus de los practicantes de la escuela.</p>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setActiveTab('memberships')}
+                className="glass-panel"
+                style={{ 
+                  padding: '18px', 
+                  cursor: 'pointer', 
+                  border: '1px solid rgba(16, 185, 129, 0.25)', 
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 11, 24, 0.8))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '15px',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                }}
+              >
+                <div style={{ padding: '10px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '10px' }}>
+                  <CreditCard size={28} color="#10b981" />
+                </div>
+                <div>
+                  <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800 }}>Membresías y Pagos</h4>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.75rem', lineHeight: 1.3 }}>Alumnos al día vs. vencidos, pagos manuales y reporte mensual.</p>
                 </div>
               </div>
 
@@ -1283,6 +1561,78 @@ export default function AdminDashboard() {
                   🎓 Asignar Grado a: <strong style={{ color: '#a78bfa' }}>{selectedUser.name}</strong>
                 </h4>
 
+                {/* Aviso y Sugerencia para el Administrador según Asistencias Reales */}
+                {(() => {
+                  const b = (selectedUser.belt || 'white').toLowerCase();
+                  let targetClasses = 150;
+                  let targetBelt = 'Azul';
+                  let nextBeltVal = 'blue';
+
+                  if (b.includes('white') || b.includes('blanco')) {
+                    targetClasses = 150; targetBelt = 'Azul'; nextBeltVal = 'blue';
+                  } else if (b.includes('blue') || b.includes('azul')) {
+                    targetClasses = 175; targetBelt = 'Morado'; nextBeltVal = 'purple';
+                  } else if (b.includes('purple') || b.includes('morado')) {
+                    targetClasses = 150; targetBelt = 'Marrón'; nextBeltVal = 'brown';
+                  } else if (b.includes('brown') || b.includes('marron') || b.includes('marrón')) {
+                    targetClasses = 125; targetBelt = 'Negro'; nextBeltVal = 'black';
+                  } else {
+                    targetClasses = 600; targetBelt = 'Faixa Preta'; nextBeltVal = 'black';
+                  }
+
+                  const hasReachedRequirement = selectedUserAttendanceCount >= targetClasses;
+
+                  return (
+                    <div style={{
+                      background: hasReachedRequirement ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 180, 216, 0.08)',
+                      border: `1px solid ${hasReachedRequirement ? 'rgba(16, 185, 129, 0.4)' : 'rgba(0, 180, 216, 0.25)'}`,
+                      borderRadius: '10px',
+                      padding: '12px 16px',
+                      marginBottom: '16px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: hasReachedRequirement ? '#34d399' : 'var(--aurora)' }}>
+                            {hasReachedRequirement ? '🏆 ¡Requisito de Asistencia Cumplido!' : '📊 Registro de Asistencia Acumulada'}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
+                            {loadingUserAttendance ? 'Consultando asistencias...' : (
+                              <>
+                                El alumno acumula <strong>{selectedUserAttendanceCount} clases</strong> en el tatami (Meta estimada: <strong>{targetClasses} clases</strong> para {targetBelt}).
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {hasReachedRequirement && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserBelt(nextBeltVal);
+                              setUserGraus(0);
+                            }}
+                            style={{
+                              background: '#10b981',
+                              color: 'black',
+                              border: 'none',
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ⚡ Seleccionar {targetBelt}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
+                        ℹ️ <em>Nota: La graduación es decisión exclusiva del profesor/administrador. Este aviso es una sugerencia basada en permanencia y asistencias.</em>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <div>
                     <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', fontWeight: 800 }}>Cinturón BJJ Oficial</label>
@@ -1520,6 +1870,802 @@ export default function AdminDashboard() {
               </div>
             )}
 
+          </div>
+        )}
+
+        {/* 6. PESTAÑA: MEMBRESÍAS, PAGOS MANUALES Y REPORTE DE ASISTENCIA */}
+        {activeTab === 'memberships' && (
+          <div>
+            {/* Sub-navegación interna */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setMembershipSubTab('status')}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid',
+                  borderColor: membershipSubTab === 'status' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                  background: membershipSubTab === 'status' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                  color: membershipSubTab === 'status' ? '#60a5fa' : 'rgba(255,255,255,0.7)',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                👥 Estado de Alumnos ({allProfiles.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMembershipSubTab('payment')}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid',
+                  borderColor: membershipSubTab === 'payment' ? '#10b981' : 'rgba(255,255,255,0.1)',
+                  background: membershipSubTab === 'payment' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                  color: membershipSubTab === 'payment' ? '#34d399' : 'rgba(255,255,255,0.7)',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                💵 Registrar Pago Manual
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMembershipSubTab('attendance');
+                  fetchMonthlyAttendanceReport(selectedMonth);
+                }}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid',
+                  borderColor: membershipSubTab === 'attendance' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  background: membershipSubTab === 'attendance' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                  color: membershipSubTab === 'attendance' ? '#c084fc' : 'rgba(255,255,255,0.7)',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                📊 Asistencias del Mes
+              </button>
+
+              <button
+                type="button"
+                onClick={fetchMembershipsOverview}
+                title="Refrescar datos"
+                style={{
+                  marginLeft: 'auto',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'rgba(255,255,255,0.8)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                🔄 Actualizar
+              </button>
+            </div>
+
+            {loadingMemberships ? (
+              <div style={{ padding: '60px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                Cargando estado general de membresías...
+              </div>
+            ) : (
+              <>
+                {/* SUBTAB 1: ESTADO DE ALUMNOS */}
+                {membershipSubTab === 'status' && (
+                  <div>
+                    {/* Tarjetas métricas superiores */}
+                    {(() => {
+                      const vigentesCount = allProfiles.filter(p => p.computedStatus === 'vigente' || p.computedStatus === 'beca').length;
+                      const vencidosCount = allProfiles.filter(p => p.computedStatus === 'vencido').length;
+                      const pruebaCount = allProfiles.filter(p => p.computedStatus === 'prueba').length;
+                      const becadosCount = allProfiles.filter(p => p.computedStatus === 'beca').length;
+                      const totalRecaudado = monthPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+                      return (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                          gap: '16px',
+                          marginBottom: '24px'
+                        }}>
+                          <div style={{
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            padding: '16px 20px',
+                            borderRadius: '14px'
+                          }}>
+                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#34d399', fontWeight: 700 }}>
+                              Al Día / Vigentes
+                            </div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginTop: '6px' }}>
+                              {vigentesCount} <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'rgba(255,255,255,0.6)' }}>({becadosCount} becados 100%)</span>
+                            </div>
+                          </div>
+
+                          <div style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            padding: '16px 20px',
+                            borderRadius: '14px'
+                          }}>
+                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#f87171', fontWeight: 700 }}>
+                              Membresías Vencidas
+                            </div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginTop: '6px' }}>
+                              {vencidosCount}
+                            </div>
+                          </div>
+
+                          <div style={{
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            padding: '16px 20px',
+                            borderRadius: '14px'
+                          }}>
+                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fbbf24', fontWeight: 700 }}>
+                              En Período de Prueba
+                            </div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginTop: '6px' }}>
+                              {pruebaCount}
+                            </div>
+                          </div>
+
+                          <div style={{
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            padding: '16px 20px',
+                            borderRadius: '14px'
+                          }}>
+                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', fontWeight: 700 }}>
+                              Recaudado este Mes
+                            </div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginTop: '6px' }}>
+                              ${totalRecaudado.toLocaleString('es-CL')}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Filtros y buscador */}
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      marginBottom: '20px',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {[
+                          { key: 'todos', label: 'Todos' },
+                          { key: 'vigente', label: '✅ Vigentes' },
+                          { key: 'vencido', label: '⚠️ Vencidos' },
+                          { key: 'beca', label: '🎓 Becados 100%' },
+                          { key: 'prueba', label: '🥋 En Prueba' }
+                        ].map(f => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => setMemberFilter(f.key)}
+                            style={{
+                              padding: '6px 14px',
+                              borderRadius: '20px',
+                              border: memberFilter === f.key ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                              background: memberFilter === f.key ? '#3b82f6' : 'rgba(255,255,255,0.05)',
+                              color: 'white',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{ minWidth: '260px', flex: '1', maxWidth: '360px' }}>
+                        <input
+                          type="text"
+                          placeholder="Buscar alumno por nombre o email..."
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            color: 'white',
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Lista de Alumnos */}
+                    {(() => {
+                      const filtered = allProfiles.filter(p => {
+                        if (memberFilter !== 'todos' && p.computedStatus !== memberFilter) return false;
+                        if (memberSearch.trim()) {
+                          const q = memberSearch.toLowerCase();
+                          const matchesName = (p.name || '').toLowerCase().includes(q);
+                          const matchesEmail = (p.email || '').toLowerCase().includes(q);
+                          if (!matchesName && !matchesEmail) return false;
+                        }
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div style={{
+                            padding: '40px',
+                            textAlign: 'center',
+                            background: 'rgba(255,255,255,0.02)',
+                            borderRadius: '12px',
+                            color: 'rgba(255,255,255,0.5)'
+                          }}>
+                            No se encontraron alumnos con los filtros seleccionados.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {filtered.map(st => {
+                            const isVigente = st.computedStatus === 'vigente';
+                            const isBeca = st.computedStatus === 'beca';
+                            const isPrueba = st.computedStatus === 'prueba';
+
+                            const badgeBg = isBeca
+                              ? 'rgba(236, 72, 153, 0.2)'
+                              : isVigente
+                              ? 'rgba(16, 185, 129, 0.2)'
+                              : isPrueba
+                              ? 'rgba(245, 158, 11, 0.2)'
+                              : 'rgba(239, 68, 68, 0.2)';
+
+                            const badgeColor = isBeca
+                              ? '#f472b6'
+                              : isVigente
+                              ? '#34d399'
+                              : isPrueba
+                              ? '#fbbf24'
+                              : '#f87171';
+
+                            const badgeBorder = isBeca
+                              ? 'rgba(236, 72, 153, 0.4)'
+                              : isVigente
+                              ? 'rgba(16, 185, 129, 0.4)'
+                              : isPrueba
+                              ? 'rgba(245, 158, 11, 0.4)'
+                              : 'rgba(239, 68, 68, 0.4)';
+
+                            const badgeText = isBeca
+                              ? '🎓 Beca 100%'
+                              : isVigente
+                              ? '✅ Al Día'
+                              : isPrueba
+                              ? `🥋 Prueba (${st.trial_classes_used || 0}/${st.max_trial_classes || 2})`
+                              : '⚠️ Vencido';
+
+                            return (
+                              <div
+                                key={st.id}
+                                style={{
+                                  background: 'rgba(255,255,255,0.03)',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  borderRadius: '12px',
+                                  padding: '16px 20px',
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '14px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px' }}>
+                                  <div style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    borderRadius: '50%',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '1.2rem',
+                                    border: '1px solid rgba(255,255,255,0.1)'
+                                  }}>
+                                    🥋
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: 800, fontSize: '0.98rem', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {st.name}
+                                      {st.role === 'admin' && (
+                                        <span style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', borderRadius: '4px' }}>
+                                          ADMIN
+                                        </span>
+                                      )}
+                                      {st.is_instructor && (
+                                        <span style={{ fontSize: '0.68rem', padding: '2px 6px', background: 'rgba(139, 92, 246, 0.2)', color: '#c084fc', borderRadius: '4px' }}>
+                                          PROFESOR
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                                      {st.email} • Faixa {getBeltLabel(st.belt)} ({st.graus || 0}º Grau)
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{
+                                      display: 'inline-block',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      background: badgeBg,
+                                      color: badgeColor,
+                                      border: `1px solid ${badgeBorder}`,
+                                      fontSize: '0.78rem',
+                                      fontWeight: 800
+                                    }}>
+                                      {badgeText}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+                                      {st.activeSub?.end_date 
+                                        ? `Vence: ${st.activeSub.end_date}` 
+                                        : st.latestSub?.end_date 
+                                        ? `Expiró: ${st.latestSub.end_date}` 
+                                        : 'Sin suscripción registrada'}
+                                      {st.serviceName && ` (${st.serviceName})`}
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPayStudentId(st.id);
+                                      setMembershipSubTab('payment');
+                                    }}
+                                    style={{
+                                      background: 'rgba(16, 185, 129, 0.15)',
+                                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                                      color: '#34d399',
+                                      padding: '8px 14px',
+                                      borderRadius: '8px',
+                                      fontWeight: 700,
+                                      fontSize: '0.82rem',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px'
+                                    }}
+                                  >
+                                    💵 Registrar Pago
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* SUBTAB 2: REGISTRO DE PAGO MANUAL */}
+                {membershipSubTab === 'payment' && (
+                  <div style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '16px',
+                    padding: '28px',
+                    maxWidth: '680px',
+                    margin: '0 auto'
+                  }}>
+                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: 'white' }}>
+                      💵 Registrar Pago Manual (Efectivo / Transferencia)
+                    </h3>
+                    <p style={{ margin: '0 0 24px 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>
+                      Registra una mensualidad pagada directamente en el Dojo o transferida a la cuenta del taller/academia. Al guardar, se activará automáticamente el acceso y la vigencia del alumno.
+                    </p>
+
+                    <form onSubmit={handleRegisterManualPayment} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                          1. Alumno
+                        </label>
+                        <select
+                          value={payStudentId}
+                          onChange={(e) => setPayStudentId(e.target.value)}
+                          required
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: '#18181b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '0.9rem'
+                          }}
+                        >
+                          <option value="">-- Seleccionar Alumno --</option>
+                          {allProfiles.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.email}) - {p.computedStatus.toUpperCase()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                          2. Disciplina / Servicio
+                        </label>
+                        <select
+                          value={payServiceId}
+                          onChange={(e) => {
+                            const sId = e.target.value;
+                            setPayServiceId(sId);
+                            const srv = allServices.find(s => s.id === sId);
+                            if (srv) {
+                              const months = parseInt(payMonths, 10) || 1;
+                              setPayAmount(String((srv.price || 45000) * months));
+                            }
+                          }}
+                          required
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: '#18181b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '0.9rem'
+                          }}
+                        >
+                          <option value="">-- Seleccionar Disciplina --</option>
+                          {allServices.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} (${Number(s.price || 0).toLocaleString('es-CL')} / mes)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            3. Período a Renovar
+                          </label>
+                          <select
+                            value={payMonths}
+                            onChange={(e) => {
+                              const m = e.target.value;
+                              setPayMonths(m);
+                              const srv = allServices.find(s => s.id === payServiceId);
+                              if (srv) {
+                                const mult = parseInt(m, 10) || 1;
+                                let disc = 0;
+                                if (mult === 3) disc = 0.10;
+                                if (mult === 6) disc = 0.15;
+                                if (mult === 12) disc = 0.25;
+                                const total = Math.round((srv.price || 45000) * mult * (1 - disc));
+                                setPayAmount(String(total));
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              background: '#18181b',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              color: 'white',
+                              fontSize: '0.9rem'
+                            }}
+                          >
+                            <option value="1">1 Mes (Plan Mensual)</option>
+                            <option value="3">3 Meses (10% Dcto. Anticipado)</option>
+                            <option value="6">6 Meses (15% Dcto. Semestral)</option>
+                            <option value="12">12 Meses (25% Dcto. Anual)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            4. Método de Pago
+                          </label>
+                          <select
+                            value={payMethod}
+                            onChange={(e) => setPayMethod(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              background: '#18181b',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              color: 'white',
+                              fontSize: '0.9rem'
+                            }}
+                          >
+                            <option value="transferencia">🏦 Transferencia Bancaria</option>
+                            <option value="efectivo">💵 Efectivo en Recepción</option>
+                            <option value="debito_credito">💳 POS / Tarjeta Presencial</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                          5. Monto Cobrado (CLP)
+                        </label>
+                        <input
+                          type="number"
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          min="0"
+                          step="1000"
+                          required
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '1.1rem',
+                            fontWeight: 800
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                        <button
+                          type="submit"
+                          disabled={savingManualPayment}
+                          style={{
+                            flex: 1,
+                            padding: '12px 20px',
+                            borderRadius: '8px',
+                            background: '#10b981',
+                            color: 'black',
+                            fontWeight: 800,
+                            fontSize: '0.92rem',
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {savingManualPayment ? 'Procesando y Activando...' : 'Confirmar y Activar Membresía'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMembershipSubTab('status')}
+                          style={{
+                            padding: '12px 20px',
+                            borderRadius: '8px',
+                            background: 'transparent',
+                            color: 'white',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Volver
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* SUBTAB 3: REPORTE DE ASISTENCIAS DEL MES */}
+                {membershipSubTab === 'attendance' && (
+                  <div>
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      padding: '16px 20px',
+                      borderRadius: '12px',
+                      marginBottom: '20px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
+                          📅 Seleccionar Mes:
+                        </span>
+                        <input
+                          type="month"
+                          value={selectedMonth}
+                          onChange={(e) => {
+                            setSelectedMonth(e.target.value);
+                            fetchMonthlyAttendanceReport(e.target.value);
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: '#18181b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
+                          🥋 Filtrar por Disciplina / Horario:
+                        </span>
+                        <select
+                          value={selectedInstructorFilter}
+                          onChange={(e) => setSelectedInstructorFilter(e.target.value)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: '#18181b',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <option value="all">Todas las clases</option>
+                          {allServices.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {loadingAttendanceReport ? (
+                      <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                        Cargando asistencias de {selectedMonth}...
+                      </div>
+                    ) : (
+                      <>
+                        {/* Resumen por disciplina y total */}
+                        {(() => {
+                          const filteredAtt = monthlyAttendances.filter(a => {
+                            if (selectedInstructorFilter !== 'all' && a.service_id !== selectedInstructorFilter) {
+                              return false;
+                            }
+                            return true;
+                          });
+
+                          return (
+                            <div>
+                              <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                gap: '14px',
+                                marginBottom: '24px'
+                              }}>
+                                <div style={{
+                                  background: 'rgba(139, 92, 246, 0.1)',
+                                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                                  padding: '16px 20px',
+                                  borderRadius: '12px'
+                                }}>
+                                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#c084fc', fontWeight: 700 }}>
+                                    Total Asistencias en {selectedMonth}
+                                  </div>
+                                  <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginTop: '6px' }}>
+                                    {filteredAtt.length} <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'rgba(255,255,255,0.6)' }}>check-ins</span>
+                                  </div>
+                                </div>
+
+                                {allServices.map(srv => {
+                                  const count = monthlyAttendances.filter(a => a.service_id === srv.id).length;
+                                  return (
+                                    <div
+                                      key={srv.id}
+                                      style={{
+                                        background: 'rgba(255,255,255,0.03)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        padding: '16px 20px',
+                                        borderRadius: '12px'
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>
+                                        {srv.name}
+                                      </div>
+                                      <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', marginTop: '6px' }}>
+                                        {count} <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>asistencias</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Tabla o lista detallada de check-ins */}
+                              <div style={{
+                                background: 'rgba(255,255,255,0.02)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                borderRadius: '12px',
+                                overflow: 'hidden'
+                              }}>
+                                <div style={{
+                                  padding: '14px 20px',
+                                  background: 'rgba(255,255,255,0.04)',
+                                  fontWeight: 800,
+                                  fontSize: '0.9rem',
+                                  color: 'white',
+                                  borderBottom: '1px solid rgba(255,255,255,0.08)'
+                                }}>
+                                  Detalle de Asistencias ({filteredAtt.length})
+                                </div>
+
+                                {filteredAtt.length === 0 ? (
+                                  <div style={{ padding: '30px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
+                                    No hay registros de asistencias para el mes y filtros seleccionados.
+                                  </div>
+                                ) : (
+                                  <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                                    {filteredAtt.map((att, idx) => {
+                                      const student = allProfiles.find(p => p.id === att.profile_id);
+                                      const srv = allServices.find(s => s.id === att.service_id);
+                                      const dateStr = att.checked_at ? new Date(att.checked_at).toLocaleString('es-CL') : 'Fecha no registrada';
+
+                                      return (
+                                        <div
+                                          key={att.id || idx}
+                                          style={{
+                                            padding: '12px 20px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                            fontSize: '0.85rem'
+                                          }}
+                                        >
+                                          <div>
+                                            <span style={{ fontWeight: 700, color: 'white' }}>
+                                              {student?.name || 'Alumno'}
+                                            </span>
+                                            <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: '8px' }}>
+                                              {srv?.name || 'Clase General'}
+                                            </span>
+                                          </div>
+                                          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>
+                                            {dateStr}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
