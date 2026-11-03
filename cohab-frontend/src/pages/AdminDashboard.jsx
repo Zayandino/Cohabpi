@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Newspaper, PlayCircle, Tag, Award, Gift, Plus, Trash2, 
-  Search, ShieldCheck, CheckCircle2, AlertCircle, Save, Sparkles 
+  Search, ShieldCheck, CheckCircle2, AlertCircle, Save, Sparkles, CreditCard
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
