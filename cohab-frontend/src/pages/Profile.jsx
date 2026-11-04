@@ -1204,7 +1204,7 @@ export default function Profile() {
                                   fontWeight: 900,
                                   letterSpacing: '0.5px'
                                 }}>
-                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% PENDIENTE' : `🎓 BECA ${profile.scholarship_percent}% PENDIENTE`}
+                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : `🎓 BECA ${profile.scholarship_percent}% PENDIENTE`}
                                 </span>
                               )}
                             </div>
@@ -1316,7 +1316,7 @@ export default function Profile() {
                                       fontWeight: 900,
                                       letterSpacing: '0.5px'
                                     }}>
-                                      {m.scholarship_percent === 100 ? '🎓 BECA 100% PENDIENTE' : `🎓 BECA ${m.scholarship_percent}% PENDIENTE`}
+                                      {m.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : `🎓 BECA ${m.scholarship_percent}% PENDIENTE`}
                                     </span>
                                   )}
                                 </div>
@@ -1575,38 +1575,27 @@ export default function Profile() {
                           )}
 
                           {totals.finalTotal === 0 ? (
-                            // BECA 100%: Inscripción gratuita directa sin pasarela de pago
+                            // BECA 100%: Activa automáticamente por la administración, sin botón de activación
                             <div style={{ marginTop: '20px' }}>
-                              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '14px', textAlign: 'center' }}>
-                                <span style={{ fontSize: '1.3rem' }}>🎓</span>
-                                <p style={{ color: '#10B981', fontSize: '0.82rem', fontWeight: 800, margin: '4px 0 2px 0' }}>¡Beca Completa Aplicada!</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', margin: 0 }}>Tu membresía está 100% cubierta. No se requiere pago.</p>
+                              <div style={{ 
+                                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 11, 24, 0.85))', 
+                                border: '1px solid #10B981', 
+                                borderRadius: '12px', 
+                                padding: '18px', 
+                                textAlign: 'center',
+                                boxShadow: '0 4px 20px rgba(16, 185, 129, 0.25)'
+                              }}>
+                                <span style={{ fontSize: '2rem' }}>🎓</span>
+                                <h4 style={{ color: '#10B981', fontSize: '1rem', fontWeight: 900, margin: '8px 0 4px 0' }}>
+                                  ¡Beca 100% Oficialmente Activa!
+                                </h4>
+                                <p style={{ color: 'white', fontSize: '0.82rem', fontWeight: 600, margin: '0 0 6px 0' }}>
+                                  Tu membresía ha sido autorizada y activada directamente por la administración de COHAB.
+                                </p>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0, lineHeight: 1.4 }}>
+                                  No requieres realizar ningún pago ni reactivación mensual. Tu acceso y pase al tatami están 100% habilitados. ¡A rodar! 🥋
+                                </p>
                               </div>
-                              <button
-                                onClick={() => {
-                                  if (!validateWaiversBeforeAction()) return;
-                                  handleProcessPayment();
-                                }}
-                                disabled={isProcessing}
-                                className="auth-btn"
-                                style={{
-                                  width: '100%',
-                                  height: '46px',
-                                  background: isProcessing ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10B981, #34D399)',
-                                  color: isProcessing ? 'var(--text-muted)' : '#060B18',
-                                  fontWeight: 900,
-                                  fontSize: '0.9rem',
-                                  letterSpacing: '1.5px',
-                                  boxShadow: isProcessing ? 'none' : '0 0 15px rgba(16, 185, 129, 0.4)',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                                  marginRight: 0,
-                                  marginLeft: 0
-                                }}
-                              >
-                                {isProcessing ? 'Activando Membresía...' : 'Activar Membresía Gratuita 🎓'}
-                              </button>
                             </div>
                           ) : (
                             <button
