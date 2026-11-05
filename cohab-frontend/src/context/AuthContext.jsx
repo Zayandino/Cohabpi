@@ -85,7 +85,13 @@ export const AuthProvider = ({ children }) => {
   // Registra un nuevo usuario en Supabase Auth
   // El trigger handle_new_user() crea automáticamente la fila en cohab_profiles
   const signUp = async (email, password) => {
-    return await supabase.auth.signUp({ email, password });
+    return await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/login`
+      }
+    });
   };
 
   const signOut = async () => {

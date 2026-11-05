@@ -65,3 +65,4 @@ Permite al administrador o recepcionista registrar pagos directos:
 ## 4. Sincronización Segura de Horarios en Registro
 * En [`RegistrationFlow.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/RegistrationFlow.jsx), los bloques horarios y los profesores asignados por bloque se leen directamente desde `cohab_services`.
 * En [`AdminDashboard.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/AdminDashboard.jsx), la función `syncOfficialServices` no sobreescribe ni duplica registros existentes si el administrador modificó los servicios.
+
