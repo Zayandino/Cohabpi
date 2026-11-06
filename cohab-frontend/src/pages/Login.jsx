@@ -47,8 +47,8 @@ const translateAuthError = (msg = '') => {
     return 'Demasiados intentos. Espera unos minutos antes de volver a intentarlo.';
   if (msg.includes('User not found') || msg.includes('user_not_found'))
     return 'No encontramos ninguna cuenta con ese correo.';
-  if (msg.includes('expired') || msg.includes('Token has expired'))
-    return 'El enlace expiró. Solicita uno nuevo.';
+  if (msg.includes('expired') || msg.includes('Token has expired') || msg.includes('otp_expired') || msg.includes('invalid'))
+    return 'El enlace expiró o ya fue utilizado. Inicia sesión o solicita uno nuevo.';
   if (msg.includes('same_password') || msg.includes('New password should be different'))
     return 'La nueva contraseña debe ser diferente a la anterior.';
   return msg;
@@ -56,7 +56,7 @@ const translateAuthError = (msg = '') => {
 
 // Modes: 'login' | 'register' | 'forgot' | 'new_password'
 export default function Login() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, resendConfirmation, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState('login');
@@ -68,6 +68,9 @@ export default function Login() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState(null);
   const [infoMessage, setInfoMessage] = useState(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(null);
 
   // Forgot password
   const [resetEmail, setResetEmail]     = useState('');
@@ -84,6 +87,16 @@ export default function Login() {
   const [newPwdError, setNewPwdError]     = useState(null);
   const [newPwdSuccess, setNewPwdSuccess] = useState(false);
 
+  // Detectar errores en el hash de la URL al volver de un enlace de confirmación expirado
+  useEffect(() => {
+    if (window.location.hash && window.location.hash.includes('error=')) {
+      const params = new URLSearchParams(window.location.hash.substring(1));
+      const errDesc = params.get('error_description') || params.get('error') || '';
+      setError(translateAuthError(errDesc));
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
   // Supabase fires PASSWORD_RECOVERY when the user arrives via the reset link
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -94,6 +107,13 @@ export default function Login() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Redirección automática cuando el usuario ya tiene sesión activa (ej. al confirmar su correo)
+  useEffect(() => {
+    if (!authLoading && user && mode !== 'new_password') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [authLoading, user, mode, navigate]);
+
   // Auto-redirect after successful password reset
   useEffect(() => {
     if (!newPwdSuccess) return;
@@ -101,26 +121,47 @@ export default function Login() {
     return () => clearTimeout(timer);
   }, [newPwdSuccess, navigate]);
 
+  const handleResendConfirmation = async () => {
+    if (!email.trim()) return;
+    setResendLoading(true);
+    setResendSuccess(null);
+    setError(null);
+    try {
+      const { error: resendErr } = await resendConfirmation(email.trim());
+      if (resendErr) throw resendErr;
+      setResendSuccess('✅ Correo de confirmación reenviado. Revisa tu bandeja de entrada y spam.');
+    } catch (err) {
+      setError(translateAuthError(err.message));
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setInfoMessage(null);
+    setNeedsConfirmation(false);
+    setResendSuccess(null);
     try {
       if (mode === 'login') {
-        const { error } = await signIn(email, password);
+        const { error } = await signIn(email.trim(), password);
         if (error) throw error;
         navigate('/dashboard');
       } else {
-        const { data, error } = await signUp(email, password);
+        const { data, error } = await signUp(email.trim(), password);
         if (error) throw error;
         if (data?.session) {
-          navigate('/onboarding');
+          navigate('/registro');
         } else {
-          setInfoMessage('✉️ Te enviamos un correo de confirmación. Revísalo y haz clic en el enlace para activar tu cuenta.');
+          setInfoMessage('✉️ Te enviamos un correo de confirmación. Revísalo (incluyendo la carpeta Spam) y haz clic en el enlace para activar tu cuenta y continuar con tu inscripción.');
         }
       }
     } catch (err) {
+      if (err.message && err.message.includes('Email not confirmed')) {
+        setNeedsConfirmation(true);
+      }
       setError(translateAuthError(err.message));
     } finally {
       setLoading(false);
@@ -416,8 +457,36 @@ export default function Login() {
                 </div>
 
                 {error && (
-                  <p style={{ color: '#FF6B6B', fontSize: '0.82rem', marginBottom: '15px', lineHeight: 1.4 }}>
-                    ⚠️ {error}
+                  <div style={{ marginBottom: '15px' }}>
+                    <p style={{ color: '#FF6B6B', fontSize: '0.82rem', marginBottom: needsConfirmation ? '8px' : '0', lineHeight: 1.4 }}>
+                      ⚠️ {error}
+                    </p>
+                    {needsConfirmation && email && (
+                      <button
+                        type="button"
+                        onClick={handleResendConfirmation}
+                        disabled={resendLoading}
+                        style={{
+                          background: 'rgba(0, 180, 216, 0.15)',
+                          border: '1px solid rgba(0, 180, 216, 0.4)',
+                          color: '#00B4D8',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          width: '100%'
+                        }}
+                      >
+                        {resendLoading ? 'Reenviando correo...' : '📬 Reenviar correo de confirmación'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {resendSuccess && (
+                  <p style={{ color: '#34D399', fontSize: '0.8rem', marginBottom: '15px', lineHeight: 1.4 }}>
+                    {resendSuccess}
                   </p>
                 )}
 
@@ -437,7 +506,7 @@ export default function Login() {
                   )}
                   <span>{mode === 'login' ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}</span>
                   <a href="#"
-                    onClick={(e) => { e.preventDefault(); setMode(mode === 'login' ? 'register' : 'login'); setError(null); setPassword(''); setShowPwd(false); }}
+                    onClick={(e) => { e.preventDefault(); setMode(mode === 'login' ? 'register' : 'login'); setError(null); setNeedsConfirmation(false); setResendSuccess(null); setPassword(''); setShowPwd(false); }}
                     style={{ color: 'var(--crimson-bright)', fontWeight: 700, textDecoration: 'none', marginLeft: '5px' }}>
                     {mode === 'login' ? 'Regístrate' : 'Inicia Sesión'}
                   </a>
@@ -446,12 +515,34 @@ export default function Login() {
             )}
 
             {infoMessage && (
-              <button
-                onClick={() => { setInfoMessage(null); setMode('login'); setEmail(''); setPassword(''); }}
-                className="auth-btn"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', marginTop: '8px' }}>
-                Volver al Login
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {resendSuccess && (
+                  <p style={{ color: '#34D399', fontSize: '0.8rem', margin: '0 0 4px 0', lineHeight: 1.4 }}>
+                    {resendSuccess}
+                  </p>
+                )}
+                {error && (
+                  <p style={{ color: '#FF6B6B', fontSize: '0.8rem', margin: '0 0 4px 0', lineHeight: 1.4 }}>
+                    ⚠️ {error}
+                  </p>
+                )}
+                {email && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={resendLoading}
+                    className="auth-btn"
+                    style={{ background: 'rgba(0, 180, 216, 0.15)', border: '1px solid rgba(0, 180, 216, 0.35)', color: '#00B4D8' }}>
+                    {resendLoading ? 'Reenviando...' : '¿No llegó el correo? Reenviar confirmación'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setInfoMessage(null); setResendSuccess(null); setError(null); setMode('login'); setPassword(''); }}
+                  className="auth-btn"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  Volver al Login
+                </button>
+              </div>
             )}
           </>
         )}

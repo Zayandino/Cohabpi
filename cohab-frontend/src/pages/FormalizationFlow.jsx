@@ -265,18 +265,19 @@ export default function FormalizationFlow() {
       if (!selectedPlan) throw new Error('Selecciona un plan de membresía.');
 
       // 1. Guardar la sesión de checkout en cohab_checkout_sessions
-      const cartItems = [{
-        personId: currentStudent.id,
-        serviceId: selectedPlan.id,
-        price: Number(selectedPlan.price),
-        serviceName: selectedPlan.name
-      }];
+      const personKey = currentStudent.isTitular ? 'main' : currentStudent.id;
+      const cartData = {
+        months: 1,
+        enrollments: {
+          [personKey]: [{ serviceId: selectedPlan.id, tierIdx: 0 }]
+        }
+      };
 
       const { data: sessionData, error: sessionError } = await supabase
         .from('cohab_checkout_sessions')
         .insert({
-          profile_id: user.id,
-          cart_items: cartItems,
+          payer_id: user.id,
+          cart_data: cartData,
           total_amount: Number(selectedPlan.price),
           status: 'pending'
         })
@@ -288,12 +289,11 @@ export default function FormalizationFlow() {
       // 2. Invocar Edge Function create-preference
       const { data: prefData, error: prefError } = await supabase.functions.invoke('create-preference', {
         body: {
-          sessionId: sessionData.id,
-          payerEmail: profile.email || user.email,
-          payerName: profile.name,
-          title: `COHAB BJJ - Membresía 2026: ${selectedPlan.name}`,
-          unitPrice: Number(selectedPlan.price),
-          quantity: 1
+          checkout_session_id: sessionData.id,
+          payer_id: user.id,
+          payer_email: profile?.email || user.email,
+          total_amount: Number(selectedPlan.price),
+          origin_url: window.location.origin
         }
       });
 

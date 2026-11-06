@@ -350,20 +350,21 @@ export default function RegistrationFlow() {
       // 1. Obtener imagen de firma en base64
       const signatureDataUrl = canvasRef.current.toDataURL('image/png');
 
-      // 2. Actualizar perfil del titular en cohab_profiles
+      // 2. Crear o actualizar perfil del titular en cohab_profiles (upsert previene fallos si el trigger inicial no corrió)
       const { error: titularError } = await supabase
         .from('cohab_profiles')
-        .update({
+        .upsert({
+          id: user.id,
+          email: user.email,
           name: titularName,
           phone: titularPhone,
           rut: titularRut,
           birthdate: titularBirthdate,
           waiver_signed: true,
-          trial_classes_used: 0,
-          max_trial_classes: 2,
+          trial_classes_used: profile?.trial_classes_used ?? 0,
+          max_trial_classes: profile?.max_trial_classes ?? 2,
           health_system: healthData['titular']?.healthSystem || 'Fonasa'
-        })
-        .eq('id', user.id);
+        }, { onConflict: 'id' });
 
       if (titularError) throw titularError;
 
@@ -425,7 +426,7 @@ export default function RegistrationFlow() {
         if (hData.meds && !alertSummaryText) alertSummaryText = `Medicamentos diarios: ${hData.details || ''}`.trim();
 
         // Ficha de salud
-        await supabase
+        const { error: healthError } = await supabase
           .from('cohab_health_records')
           .insert({
             profile_id: targetProfileId,
@@ -433,9 +434,10 @@ export default function RegistrationFlow() {
             answers: hData,
             alert_summary: alertSummaryText
           });
+        if (healthError) console.error('Error guardando ficha de salud:', healthError.message);
 
         // Contacto de emergencia
-        await supabase
+        const { error: emergencyError } = await supabase
           .from('cohab_emergency_contacts')
           .insert({
             profile_id: targetProfileId,
@@ -444,10 +446,11 @@ export default function RegistrationFlow() {
             relationship: emergencyRelation,
             is_primary: true
           });
+        if (emergencyError) console.error('Error guardando contacto de emergencia:', emergencyError.message);
 
         // Consentimiento y firma
         if (documentId) {
-          await supabase
+          const { error: consentError } = await supabase
             .from('cohab_consents')
             .insert({
               profile_id: targetProfileId,
@@ -463,6 +466,7 @@ export default function RegistrationFlow() {
                 ? 'Requiere validación de certificado médico por Administración.' 
                 : 'Visado inteligente automático para clase de prueba.'
             });
+          if (consentError) console.error('Error guardando consentimiento:', consentError.message);
         }
 
         summaryList.push({

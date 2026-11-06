@@ -38,13 +38,15 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
     return <Navigate to="/login" replace />;
   }
 
-  // Usuario autenticado pero con perfil incompleto (onboarding pendiente o sin nombre).
+  // Usuario autenticado pero sin fila de perfil aún o con perfil incompleto (onboarding pendiente o sin nombre).
   // O usuarios afectados por el bug de fecha de nacimiento (fecha de registro).
-  // Solo aplica si NO estamos ya en /onboarding para evitar loops.
+  // Solo aplica si NO estamos ya en /onboarding o /registro para evitar loops.
   const isBirthdateBugged = profile?.birthdate && profile?.created_at && 
     (profile.birthdate === profile.created_at.substring(0, 10));
 
-  if (profile && (!profile.phone || !profile.name || !profile.birthdate || isBirthdateBugged) && location.pathname !== '/onboarding' && location.pathname !== '/registro') {
+  const isProfileIncomplete = !profile || !profile.phone || !profile.name || !profile.birthdate || isBirthdateBugged;
+
+  if (isProfileIncomplete && location.pathname !== '/onboarding' && location.pathname !== '/registro') {
     return <Navigate to="/registro" replace />;
   }
 

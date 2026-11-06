@@ -89,7 +89,18 @@ export const AuthProvider = ({ children }) => {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/login`
+        emailRedirectTo: `${window.location.origin}/registro`
+      }
+    });
+  };
+
+  // Reenvía el correo de confirmación de cuenta
+  const resendConfirmation = async (email) => {
+    return await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/registro`
       }
     });
   };
@@ -107,6 +118,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     signIn,
     signUp,
+    resendConfirmation,
     signOut,
     user,
     profile,

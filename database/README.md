@@ -22,9 +22,9 @@ Scripts SQL históricos, ordenados por la **fecha en que se agregaron al reposit
 > - Vistas: `cohab_student_status` (consolidación en tiempo real del estado de cada alumno: `prueba`, `vigente`, `por_vencer`, `vencido`, `revision`, `restringido`).
 > - Funciones y Triggers: `cohab_is_instructor()`, `cohab_get_tatami_roster()`, `trg_auto_approve_consent()`.
 
-## Infra: parche Kong (login)
+## Infra: parche Kong (login y confirmación de correo)
 
-En el VPS, ruta `auth-v1-all` de `volumes/api/kong.yml` (compose `cohab-los-andes-supabase-dww5gh`) requiere:
+En el VPS, tanto las rutas abiertas (`auth-v1-open` para `/auth/v1/verify`, `auth-v1-open-callback` para `/auth/v1/callback`, `auth-v1-open-authorize` para `/auth/v1/authorize`) como la ruta protegida `auth-v1-all` (`/auth/v1/`) de `volumes/api/kong.yml` (compose `cohab-los-andes-supabase-dww5gh`) deben incluir el mismo bloque `hosts`:
 
 ```yaml
         hosts:
@@ -33,5 +33,7 @@ En el VPS, ruta `auth-v1-all` de `volumes/api/kong.yml` (compose `cohab-los-ande
           - localhost
 ```
 
-Sin esto el login falla. Si Dokploy regenera el compose, volver a aplicarlo y ejecutar `kong reload`. Backup: `kong.yml.bak`.
+> [!IMPORTANT]
+> En Kong 2.8, cualquier ruta con `hosts:` tiene mayor prioridad de enrutamiento que una ruta sin `hosts:`, sin importar la longitud del path. Si `auth-v1-all` tiene `hosts:` y `auth-v1-open` (`/auth/v1/verify`) no lo tiene, Kong intercepta el clic del enlace de confirmación de correo con `auth-v1-all` y devuelve `401 {"message":"No API key found in request"}`.
+> Al aplicar cambios en `volumes/api/kong.yml` (modo DB-less), reiniciar el contenedor Kong (`docker restart cohab-los-andes-supabase-dww5gh-supabase-kong`). Backup: `kong.yml.bak`.
 
