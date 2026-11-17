@@ -982,17 +982,17 @@ export default function FormalizationFlow() {
                 <div style={{ color: '#34D399', fontWeight: 900, fontSize: '0.82rem' }}>
                   🏦 Datos para Transferencia Bancaria COHAB
                 </div>
-                <div><strong>Titular:</strong> {bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos (COHAB Los Andes)'}</div>
-                {bankSettings?.holder_rut && <div><strong>RUT:</strong> {bankSettings.holder_rut}</div>}
-                <div><strong>Banco:</strong> {bankSettings?.bank_name || 'Banco de Chile / BancoEstado'}</div>
-                <div><strong>Tipo de Cuenta:</strong> {bankSettings?.account_type || 'Cuenta Vista / Corriente'}</div>
-                <div><strong>N° de Cuenta:</strong> {bankSettings?.account_number || 'Solicitar en recepción'}</div>
+                <div><strong>Titular:</strong> {bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos'}</div>
+                <div><strong>RUT:</strong> {bankSettings?.holder_rut || '16.851.618-5'}</div>
+                <div><strong>Banco:</strong> {bankSettings?.bank_name || 'BancoEstado'}</div>
+                <div><strong>Tipo de Cuenta:</strong> {bankSettings?.account_type || 'CuentaRUT'}</div>
+                <div><strong>N° de Cuenta:</strong> {bankSettings?.account_number || '16851618'}</div>
                 <div><strong>Correo:</strong> {bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com'}</div>
 
                 <button
                   type="button"
                   onClick={() => {
-                    const text = `Titular: ${bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos'}\nBanco: ${bankSettings?.bank_name || ''}\nTipo: ${bankSettings?.account_type || ''}\nCuenta: ${bankSettings?.account_number || ''}\nCorreo: ${bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com'}`;
+                    const text = `Titular: ${bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos'}\nRUT: ${bankSettings?.holder_rut || '16.851.618-5'}\nBanco: ${bankSettings?.bank_name || 'BancoEstado'}\nTipo: ${bankSettings?.account_type || 'CuentaRUT'}\nCuenta: ${bankSettings?.account_number || '16851618'}\nCorreo: ${bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com'}`;
                     navigator.clipboard?.writeText(text);
                     setCopiedBank(true);
                     setTimeout(() => setCopiedBank(false), 2500);

@@ -2004,11 +2004,11 @@ export default function Profile() {
 
                   {(() => {
                     const totals = calculateTotal();
-                    const bName = bankSettings?.bank_name || 'Banco de Chile / BancoEstado';
-                    const bType = bankSettings?.account_type || 'Cuenta Vista / Corriente';
-                    const bNum = bankSettings?.account_number || 'Solicitar en recepción';
-                    const bHolder = bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos (COHAB Los Andes)';
-                    const bRut = bankSettings?.holder_rut || '';
+                    const bName = bankSettings?.bank_name || 'BancoEstado';
+                    const bType = bankSettings?.account_type || 'CuentaRUT';
+                    const bNum = bankSettings?.account_number || '16851618';
+                    const bHolder = bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos';
+                    const bRut = bankSettings?.holder_rut || '16.851.618-5';
                     const bEmail = bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com';
 
                     return (

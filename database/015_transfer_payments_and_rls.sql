@@ -23,11 +23,11 @@ CREATE INDEX IF NOT EXISTS idx_cohab_payments_checkout_session_id ON public.coha
 -- 2. TABLA DE CONFIGURACIÓN BANCARIA PARA TRANSFERENCIAS (EDITABLE POR ADMIN)
 CREATE TABLE IF NOT EXISTS public.cohab_bank_settings (
   id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  bank_name TEXT NOT NULL DEFAULT 'Banco de Chile / BancoEstado',
-  account_type TEXT NOT NULL DEFAULT 'Cuenta Vista / Corriente',
-  account_number TEXT NOT NULL DEFAULT 'Solicitar o verificar en recepción',
-  holder_name TEXT NOT NULL DEFAULT 'Eduardo Javier Ambler Ríos (COHAB Los Andes)',
-  holder_rut TEXT NOT NULL DEFAULT '',
+  bank_name TEXT NOT NULL DEFAULT 'BancoEstado',
+  account_type TEXT NOT NULL DEFAULT 'CuentaRUT',
+  account_number TEXT NOT NULL DEFAULT '16851618',
+  holder_name TEXT NOT NULL DEFAULT 'Eduardo Javier Ambler Ríos',
+  holder_rut TEXT NOT NULL DEFAULT '16.851.618-5',
   confirmation_email TEXT NOT NULL DEFAULT 'ambler.eduardo@gmail.com',
   instructions TEXT DEFAULT 'Transfiere el monto exacto e indica el nombre del alumno en el comentario. Luego presiona "Informar Transferencia" para que el administrador habilite tu membresía.',
   updated_at TIMESTAMPTZ DEFAULT now()

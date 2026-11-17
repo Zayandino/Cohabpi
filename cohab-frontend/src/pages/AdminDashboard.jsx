@@ -65,11 +65,11 @@ export default function AdminDashboard() {
   const [memberFilter, setMemberFilter] = useState('todos'); // 'todos' | 'vigente' | 'pendiente' | 'vencido' | 'beca' | 'prueba'
   const [memberSearch, setMemberSearch] = useState('');
   const [bankForm, setBankForm] = useState({
-    bank_name: 'Banco de Chile / BancoEstado',
-    account_type: 'Cuenta Vista / Corriente',
-    account_number: 'Solicitar o verificar en recepción',
-    holder_name: 'Eduardo Javier Ambler Ríos (COHAB Los Andes)',
-    holder_rut: '',
+    bank_name: 'BancoEstado',
+    account_type: 'CuentaRUT',
+    account_number: '16851618',
+    holder_name: 'Eduardo Javier Ambler Ríos',
+    holder_rut: '16.851.618-5',
     confirmation_email: 'ambler.eduardo@gmail.com',
     instructions: ''
   });
