@@ -321,6 +321,9 @@ export default function Profile() {
     const pct = Number(scholarshipPercent || 0);
     const price = Number(basePrice || 0);
     if (pct <= 0) return price;
+    if (pct === 11) {
+      return price === 45000 ? 40000 : Math.round((price * (40000 / 45000)) / 500) * 500;
+    }
     if (pct === 22) {
       return price === 45000 ? 35000 : Math.round((price * (35000 / 45000)) / 500) * 500;
     }

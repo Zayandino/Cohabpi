@@ -817,11 +817,14 @@ export default function AdminDashboard() {
     }
   };
 
-  // Calcula la mensualidad con descuento de beca (22% deja $45.000 exactamente en $35.000)
+  // Calcula la mensualidad con descuento de beca (11% deja $45.000 en $40.000; 22% deja $45.000 en $35.000)
   const calculateDiscountedMonthlyPrice = (basePrice, scholarshipPercent) => {
     const pct = Number(scholarshipPercent || 0);
     const price = Number(basePrice || 45000);
     if (pct <= 0) return price;
+    if (pct === 11) {
+      return price === 45000 ? 40000 : Math.round((price * (40000 / 45000)) / 500) * 500;
+    }
     if (pct === 22) {
       return price === 45000 ? 35000 : Math.round((price * (35000 / 45000)) / 500) * 500;
     }
@@ -2090,13 +2093,12 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px', fontWeight: 800 }}>Selección Rápida de Beca / Descuento</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                    <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px', fontWeight: 800 }}>Descuentos Express (1 Clic)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px', marginBottom: '14px' }}>
                       {[
                         { val: 0, label: '0% Normal', sub: '$45.000' },
-                        { val: 22, label: '⚡ 22% Convenio', sub: '$45k → $35.000' },
-                        { val: 25, label: '25% Parcial', sub: '$33.750' },
-                        { val: 50, label: '50% Media Beca', sub: '$22.500' },
+                        { val: 11, label: '⚡ 11% Express', sub: '$45k → $40.000' },
+                        { val: 22, label: '⚡ 22% Express', sub: '$45k → $35.000' },
                         { val: 75, label: '75% Beca Mayor', sub: '$11.250' },
                         { val: 100, label: '🎓 100% Beca', sub: '$0 Liberado' }
                       ].map(opt => {
@@ -2107,7 +2109,7 @@ export default function AdminDashboard() {
                             type="button"
                             onClick={() => setUserScholarship(opt.val)}
                             style={{
-                              padding: '8px 6px',
+                              padding: '10px 8px',
                               borderRadius: '8px',
                               border: active ? '2px solid #ec4899' : '1px solid rgba(255,255,255,0.1)',
                               background: active ? 'rgba(236, 72, 153, 0.18)' : 'rgba(255,255,255,0.03)',
@@ -2117,26 +2119,58 @@ export default function AdminDashboard() {
                             }}
                           >
                             <div style={{ fontWeight: 900, fontSize: '0.76rem', color: active ? '#f472b6' : 'white' }}>{opt.label}</div>
-                            <div style={{ fontSize: '0.68rem', color: active ? '#34d399' : 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>{opt.sub}</div>
+                            <div style={{ fontSize: '0.7rem', color: active ? '#34d399' : 'var(--text-muted)', fontWeight: 800, marginTop: '3px' }}>{opt.sub}</div>
                           </button>
                         );
                       })}
                     </div>
 
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', fontWeight: 800 }}>Porcentaje de Beca / Descuento</label>
-                    <select 
-                      className="form-input" 
-                      value={userScholarship} 
-                      onChange={e => setUserScholarship(parseInt(e.target.value, 10))} 
-                      style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px' }}
-                    >
-                      <option value={0}>0% - Sin Beca (Pago Completo $45.000)</option>
-                      <option value={22}>22% - Beca Especial / Convenio ($45.000 → $35.000)</option>
-                      <option value={25}>25% - Beca Parcial (Paga 75% → $33.750)</option>
-                      <option value={50}>50% - Media Beca (Paga 50% → $22.500)</option>
-                      <option value={75}>75% - Beca Mayor (Paga 25% → $11.250)</option>
-                      <option value={100}>100% - Beca Completa (Pago Liberado / Gratis)</option>
-                    </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', fontWeight: 800 }}>
+                          Ingresar Porcentaje Manual (0% a 100%)
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={userScholarship}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw === '') {
+                                setUserScholarship(0);
+                                return;
+                              }
+                              const num = Math.max(0, Math.min(100, parseInt(raw, 10) || 0));
+                              setUserScholarship(num);
+                            }}
+                            className="form-input"
+                            style={{ background: 'var(--bg-elevated)', color: 'white', height: '40px', fontWeight: 900, fontSize: '1rem', paddingRight: '32px' }}
+                          />
+                          <span style={{ position: 'absolute', right: '12px', top: '10px', color: '#ec4899', fontWeight: 900 }}>%</span>
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        borderRadius: '8px',
+                        padding: '8px 12px',
+                        minHeight: '40px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center'
+                      }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                          Mensualidad Resultante (Base $45.000):
+                        </span>
+                        <strong style={{ fontSize: '0.98rem', color: '#34D399', fontWeight: 900 }}>
+                          ${calculateDiscountedMonthlyPrice(45000, userScholarship).toLocaleString('es-CL')} CLP / mes
+                        </strong>
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '10px', alignItems: 'center' }}>

@@ -289,15 +289,19 @@ export default function FormalizationFlow() {
       const selectedPlan = services.find(s => s.id === selectedServiceId);
       if (!selectedPlan) throw new Error('Selecciona un plan de membresía.');
 
-      // Calcular descuento de beca si aplica (22% deja $45.000 exactamente en $35.000)
+      // Calcular descuento de beca si aplica (11% -> $40.000, 22% -> $35.000)
       const studentObj = currentStudent.isTitular ? profile : currentStudent;
       const scholarshipPct = Number(studentObj?.scholarship_percent || 0);
       const basePrice = Number(selectedPlan.price || 45000);
       let finalAmount = basePrice;
       if (scholarshipPct > 0 && (selectedPlan.name.toLowerCase().includes('bjj') || selectedPlan.name.toLowerCase().includes('jiu jitsu'))) {
-        finalAmount = scholarshipPct === 22
-          ? (basePrice === 45000 ? 35000 : Math.round((basePrice * (35000 / 45000)) / 500) * 500)
-          : Math.round(basePrice * (1 - scholarshipPct / 100));
+        if (scholarshipPct === 11) {
+          finalAmount = basePrice === 45000 ? 40000 : Math.round((basePrice * (40000 / 45000)) / 500) * 500;
+        } else if (scholarshipPct === 22) {
+          finalAmount = basePrice === 45000 ? 35000 : Math.round((basePrice * (35000 / 45000)) / 500) * 500;
+        } else {
+          finalAmount = Math.round(basePrice * (1 - scholarshipPct / 100));
+        }
       }
 
       // 1. Guardar la sesión de checkout en cohab_checkout_sessions
@@ -907,7 +911,11 @@ export default function FormalizationFlow() {
                 const pct = Number(studentObj?.scholarship_percent || 0);
                 const baseP = Number(selectedPlan?.price || 45000);
                 const discP = pct > 0
-                  ? (pct === 22 ? (baseP === 45000 ? 35000 : Math.round((baseP * (35000 / 45000)) / 500) * 500) : Math.round(baseP * (1 - pct / 100)))
+                  ? (pct === 11
+                      ? (baseP === 45000 ? 40000 : Math.round((baseP * (40000 / 45000)) / 500) * 500)
+                      : pct === 22
+                      ? (baseP === 45000 ? 35000 : Math.round((baseP * (35000 / 45000)) / 500) * 500)
+                      : Math.round(baseP * (1 - pct / 100)))
                   : baseP;
                 return (
                   <>
