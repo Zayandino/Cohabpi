@@ -317,10 +317,22 @@ export default function Profile() {
     return activeSubscriptions.some(sub => sub.profile_id === targetId);
   };
 
+  const applyScholarshipToBasePrice = (basePrice, scholarshipPercent) => {
+    const pct = Number(scholarshipPercent || 0);
+    const price = Number(basePrice || 0);
+    if (pct <= 0) return price;
+    if (pct === 22) {
+      return price === 45000 ? 35000 : Math.round((price * (35000 / 45000)) / 500) * 500;
+    }
+    return Math.round(price * (1 - pct / 100));
+  };
+
   const calculateTotal = () => {
+    let rawBaseSubtotal = 0;
     let subtotal = 0;
     let peopleWithServicesCount = 0;
     let billableServicesCount = 0;
+    let maxScholarshipApplied = 0;
     
     Object.keys(enrollments).forEach(personId => {
       const personServices = enrollments[personId] || [];
@@ -342,13 +354,18 @@ export default function Profile() {
             basePrice = service.price || 0;
           }
 
+          rawBaseSubtotal += basePrice;
+
           // Aplicar descuento de beca antes de sumarlo al subtotal familiar
           // Solo aplica para disciplinas de BJJ
           const scholarshipPercent = getScholarshipPercentForPerson(personId);
           if (scholarshipPercent > 0) {
             const isBJJService = service.name.toLowerCase().includes('bjj') || service.name.toLowerCase().includes('jiu jitsu');
             if (isBJJService) {
-              basePrice = Math.round(basePrice * (1 - scholarshipPercent / 100));
+              basePrice = applyScholarshipToBasePrice(basePrice, scholarshipPercent);
+              if (scholarshipPercent > maxScholarshipApplied) {
+                maxScholarshipApplied = scholarshipPercent;
+              }
             }
           }
           subtotal += basePrice;
@@ -356,6 +373,7 @@ export default function Profile() {
       });
     });
 
+    const scholarshipDiscountAmount = Math.max(0, rawBaseSubtotal - subtotal);
     const isFamilyDiscountApplicable = peopleWithServicesCount > 1;
     const familyDiscountAmount = isFamilyDiscountApplicable ? Math.round(subtotal * 0.15) : 0;
     const monthlyTotalAfterFamilyDiscount = subtotal - familyDiscountAmount;
@@ -370,6 +388,9 @@ export default function Profile() {
     const finalTotal = basePrepaidTotal - prepayDiscountAmount;
 
     return {
+      rawBaseSubtotal,
+      scholarshipDiscountAmount,
+      maxScholarshipApplied,
       subtotal,
       activeEnrollmentsCount: billableServicesCount,
       isFamilyDiscountApplicable,
@@ -511,9 +532,14 @@ export default function Profile() {
 
       // OPCIÓN A: PAGO MEDIANTE TRANSFERENCIA BANCARIA (Notificar al Admin y dejar en revisión)
       if (paymentMethod === 'transferencia') {
+        const discountTag = totals.scholarshipDiscountAmount > 0
+          ? `[Beca ${totals.maxScholarshipApplied}% aplicada: Tarifa ${formats.format(totals.rawBaseSubtotal)} → ${formats.format(totals.finalTotal)}]`
+          : '';
+        const combinedNotes = [discountTag, (transferNotes || '').trim()].filter(Boolean).join(' • ');
+
         const { data: rpcData, error: rpcError } = await supabase.rpc('cohab_submit_transfer_payment', {
           p_checkout_session_id: checkoutSessionId,
-          p_notes: transferNotes || null
+          p_notes: combinedNotes || null
         });
 
         if (rpcError) throw rpcError;
@@ -1602,9 +1628,23 @@ export default function Profile() {
                       {totals.activeEnrollmentsCount > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-light)' }}>
-                            <span>Mensualidad Base (Suma):</span>
-                            <span>{formats.format(totals.subtotal)}</span>
+                            <span>Mensualidad Base (Tarifa Normal):</span>
+                            <span>{formats.format(totals.rawBaseSubtotal)}</span>
                           </div>
+
+                          {totals.scholarshipDiscountAmount > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34D399', fontWeight: 800 }}>
+                              <span>🎓 Descuento Beca ({totals.maxScholarshipApplied}%):</span>
+                              <span>-{formats.format(totals.scholarshipDiscountAmount)}</span>
+                            </div>
+                          )}
+
+                          {totals.scholarshipDiscountAmount > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'white', fontWeight: 700, fontSize: '0.82rem', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                              <span>Mensualidad con Beca:</span>
+                              <span>{formats.format(totals.subtotal)}</span>
+                            </div>
+                          )}
 
                           {totals.isFamilyDiscountApplicable && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#10B981', fontWeight: 700 }}>
@@ -1977,6 +2017,11 @@ export default function Profile() {
                         <div style={{ fontSize: '1.4rem', color: 'white', fontWeight: 900, fontFamily: 'var(--font-display)', marginTop: '4px' }}>
                           {formats.format(totals.finalTotal)}
                         </div>
+                        {totals.scholarshipDiscountAmount > 0 && (
+                          <div style={{ marginTop: '6px', padding: '5px 8px', background: 'rgba(16, 185, 129, 0.14)', border: '1px solid rgba(16, 185, 129, 0.35)', borderRadius: '6px', color: '#34D399', fontSize: '0.74rem', fontWeight: 800 }}>
+                            🎓 Beca {totals.maxScholarshipApplied}% aplicada: Tarifa normal {formats.format(totals.rawBaseSubtotal)} → Pagas {formats.format(totals.finalTotal)}
+                          </div>
+                        )}
                         
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginTop: '10px' }}>Titular del Pago</div>
                         <div style={{ fontSize: '0.85rem', color: 'white', fontWeight: 700, marginTop: '2px' }}>

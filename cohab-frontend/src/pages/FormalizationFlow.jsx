@@ -64,7 +64,8 @@ export default function FormalizationFlow() {
             rut: profile.rut,
             birthdate: profile.birthdate,
             isTitular: true,
-            belt: profile.belt || 'Cinturón Blanco'
+            belt: profile.belt || 'Cinturón Blanco',
+            scholarship_percent: profile.scholarship_percent || 0
           });
         }
         if (familyData && familyData.length > 0) {
@@ -76,7 +77,8 @@ export default function FormalizationFlow() {
               birthdate: fam.birthdate,
               isTitular: false,
               relationship: fam.relationship || 'hijo',
-              belt: fam.belt || 'Cinturón Blanco'
+              belt: fam.belt || 'Cinturón Blanco',
+              scholarship_percent: fam.scholarship_percent || 0
             });
           });
         }
@@ -287,18 +289,22 @@ export default function FormalizationFlow() {
       const selectedPlan = services.find(s => s.id === selectedServiceId);
       if (!selectedPlan) throw new Error('Selecciona un plan de membresía.');
 
-      // Calcular descuento de beca si aplica
+      // Calcular descuento de beca si aplica (22% deja $45.000 exactamente en $35.000)
       const studentObj = currentStudent.isTitular ? profile : currentStudent;
       const scholarshipPct = Number(studentObj?.scholarship_percent || 0);
-      let finalAmount = Number(selectedPlan.price || 45000);
+      const basePrice = Number(selectedPlan.price || 45000);
+      let finalAmount = basePrice;
       if (scholarshipPct > 0 && (selectedPlan.name.toLowerCase().includes('bjj') || selectedPlan.name.toLowerCase().includes('jiu jitsu'))) {
-        finalAmount = Math.round(finalAmount * (1 - scholarshipPct / 100));
+        finalAmount = scholarshipPct === 22
+          ? (basePrice === 45000 ? 35000 : Math.round((basePrice * (35000 / 45000)) / 500) * 500)
+          : Math.round(basePrice * (1 - scholarshipPct / 100));
       }
 
       // 1. Guardar la sesión de checkout en cohab_checkout_sessions
       const personKey = currentStudent.isTitular ? 'main' : currentStudent.id;
       const cartData = {
         months: 1,
+        scholarship_percent: scholarshipPct,
         enrollments: {
           [personKey]: [{ serviceId: selectedPlan.id, tierIdx: 0 }]
         }
@@ -319,9 +325,14 @@ export default function FormalizationFlow() {
 
       // OPCIÓN A: Transferencia Bancaria
       if (formalizationPayMethod === 'transferencia') {
+        const discountTag = scholarshipPct > 0
+          ? `[Beca ${scholarshipPct}% aplicada: ${formatPrice(basePrice)} → ${formatPrice(finalAmount)}]`
+          : '';
+        const combinedNotes = [discountTag, (transferNotes || '').trim()].filter(Boolean).join(' • ');
+
         const { data: rpcData, error: rpcError } = await supabase.rpc('cohab_submit_transfer_payment', {
           p_checkout_session_id: sessionData.id,
-          p_notes: transferNotes || null
+          p_notes: combinedNotes || null
         });
         if (rpcError) throw rpcError;
         if (rpcData && rpcData.success === false) {
@@ -886,10 +897,33 @@ export default function FormalizationFlow() {
                 <span>Temporada:</span>
                 <strong style={{ color: '#00B4D8' }}>2026 (Enero - Diciembre)</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Protocolo v5:</span>
                 <strong style={{ color: '#34D399' }}>Firmado y Visado Digitalmente</strong>
               </div>
+              {(() => {
+                const selectedPlan = services.find(s => s.id === selectedServiceId);
+                const studentObj = currentStudent?.isTitular ? profile : currentStudent;
+                const pct = Number(studentObj?.scholarship_percent || 0);
+                const baseP = Number(selectedPlan?.price || 45000);
+                const discP = pct > 0
+                  ? (pct === 22 ? (baseP === 45000 ? 35000 : Math.round((baseP * (35000 / 45000)) / 500) * 500) : Math.round(baseP * (1 - pct / 100)))
+                  : baseP;
+                return (
+                  <>
+                    {pct > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#34D399', fontWeight: 800 }}>
+                        <span>🎓 Beca Aplicada ({pct}%):</span>
+                        <span>{formatPrice(baseP)} → {formatPrice(discP)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px' }}>
+                      <span>Total a pagar:</span>
+                      <strong style={{ color: '#00B4D8', fontSize: '0.95rem' }}>{formatPrice(discP)}</strong>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Selector de Método de Pago: Mercado Pago vs Transferencia */}

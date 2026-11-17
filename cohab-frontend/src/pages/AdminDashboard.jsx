@@ -817,6 +817,37 @@ export default function AdminDashboard() {
     }
   };
 
+  // Calcula la mensualidad con descuento de beca (22% deja $45.000 exactamente en $35.000)
+  const calculateDiscountedMonthlyPrice = (basePrice, scholarshipPercent) => {
+    const pct = Number(scholarshipPercent || 0);
+    const price = Number(basePrice || 45000);
+    if (pct <= 0) return price;
+    if (pct === 22) {
+      return price === 45000 ? 35000 : Math.round((price * (35000 / 45000)) / 500) * 500;
+    }
+    return Math.round(price * (1 - pct / 100));
+  };
+
+  // Calcula el monto total a cobrar en el formulario de Pago Manual considerando beca y período
+  const calculateManualPaymentAmount = (studentId, serviceId, monthsVal, profilesList = allProfiles, servicesList = allServices) => {
+    const student = (profilesList || []).find(p => p.id === studentId);
+    const srv = (servicesList || []).find(s => s.id === serviceId) || (servicesList || [])[0];
+    const basePrice = Number(srv?.price || 45000);
+    const pct = Number(student?.scholarship_percent || 0);
+    const isBJJ = !srv || (srv.name || '').toLowerCase().includes('bjj') || (srv.name || '').toLowerCase().includes('jiu jitsu');
+    const monthlyAfterScholarship = (pct > 0 && isBJJ)
+      ? calculateDiscountedMonthlyPrice(basePrice, pct)
+      : basePrice;
+
+    const mult = Math.max(1, parseInt(monthsVal, 10) || 1);
+    let prepayDisc = 0;
+    if (mult === 3) prepayDisc = 0.10;
+    else if (mult === 6) prepayDisc = 0.15;
+    else if (mult === 12) prepayDisc = 0.25;
+
+    return Math.round(monthlyAfterScholarship * mult * (1 - prepayDisc));
+  };
+
   const handleRegisterManualPayment = async (e) => {
     e.preventDefault();
     if (!payStudentId || !payServiceId) {
@@ -828,6 +859,40 @@ export default function AdminDashboard() {
       setSavingManualPayment(true);
       const months = Math.max(1, parseInt(payMonths, 10) || 1);
       const amount = Math.max(0, parseFloat(payAmount) || 0);
+
+      // Si el alumno ya tenía un pago pendiente (ej. aviso de transferencia), actualizarlo a aprobado para no duplicar
+      const existingPending = pendingPaymentsList.find(p => p.profile_id === payStudentId);
+      if (existingPending?.id) {
+        await supabase
+          .from('cohab_payments')
+          .update({
+            amount,
+            status: 'approved',
+            payment_method: payMethod,
+            status_detail: 'approved_manual_form',
+            payment_date: new Date().toISOString()
+          })
+          .eq('id', existingPending.id);
+
+        if (existingPending.checkout_session_id) {
+          await supabase
+            .from('cohab_checkout_sessions')
+            .update({ status: 'completed', updated_at: new Date().toISOString() })
+            .eq('id', existingPending.checkout_session_id);
+        }
+      } else {
+        // Insertar pago aprobado en cohab_payments
+        const { error: payErr } = await supabase
+          .from('cohab_payments')
+          .insert([{
+            profile_id: payStudentId,
+            amount,
+            status: 'approved',
+            payment_method: payMethod,
+            payment_date: new Date().toISOString()
+          }]);
+        if (payErr) throw payErr;
+      }
 
       // Buscar si tiene suscripción vigente para encadenar fecha de término
       const today = new Date();
@@ -848,18 +913,6 @@ export default function AdminDashboard() {
 
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
-
-      // Insertar pago aprobado en cohab_payments
-      const { error: payErr } = await supabase
-        .from('cohab_payments')
-        .insert([{
-          profile_id: payStudentId,
-          amount,
-          status: 'approved',
-          payment_method: payMethod,
-          payment_date: new Date().toISOString()
-        }]);
-      if (payErr) throw payErr;
 
       // Activar perfil en cohab_profiles
       await supabase
@@ -946,7 +999,11 @@ export default function AdminDashboard() {
       showToast('No hay disciplinas activas configuradas.', 'error');
       return;
     }
-    if (!window.confirm(`¿Deseas habilitar a ${student.name} en "${defaultSrv.name}" por 1 mes (hasta el próximo mes) mediante pago por transferencia?`)) {
+    const pct = Number(student.scholarship_percent || 0);
+    const amount = calculateDiscountedMonthlyPrice(defaultSrv.price || 45000, pct);
+    const discountLabel = pct > 0 ? ` (Beca ${pct}% aplicada → $${amount.toLocaleString('es-CL')})` : ` ($${amount.toLocaleString('es-CL')})`;
+
+    if (!window.confirm(`¿Deseas habilitar a ${student.name} en "${defaultSrv.name}"${discountLabel} por 1 mes (hasta el próximo mes) mediante pago por transferencia?`)) {
       return;
     }
     try {
@@ -956,9 +1013,6 @@ export default function AdminDashboard() {
       endDate.setUTCMonth(endDate.getUTCMonth() + 1);
       const startDateStr = today.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
-
-      const pct = Number(student.scholarship_percent || 0);
-      const amount = Math.round(Number(defaultSrv.price || 45000) * (1 - pct / 100));
 
       const { error: payErr } = await supabase.from('cohab_payments').insert([{
         profile_id: student.id,
@@ -2036,18 +2090,52 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
+                    <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px', fontWeight: 800 }}>Selección Rápida de Beca / Descuento</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                      {[
+                        { val: 0, label: '0% Normal', sub: '$45.000' },
+                        { val: 22, label: '⚡ 22% Convenio', sub: '$45k → $35.000' },
+                        { val: 25, label: '25% Parcial', sub: '$33.750' },
+                        { val: 50, label: '50% Media Beca', sub: '$22.500' },
+                        { val: 75, label: '75% Beca Mayor', sub: '$11.250' },
+                        { val: 100, label: '🎓 100% Beca', sub: '$0 Liberado' }
+                      ].map(opt => {
+                        const active = Number(userScholarship) === opt.val;
+                        return (
+                          <button
+                            key={opt.val}
+                            type="button"
+                            onClick={() => setUserScholarship(opt.val)}
+                            style={{
+                              padding: '8px 6px',
+                              borderRadius: '8px',
+                              border: active ? '2px solid #ec4899' : '1px solid rgba(255,255,255,0.1)',
+                              background: active ? 'rgba(236, 72, 153, 0.18)' : 'rgba(255,255,255,0.03)',
+                              color: 'white',
+                              cursor: 'pointer',
+                              textAlign: 'center'
+                            }}
+                          >
+                            <div style={{ fontWeight: 900, fontSize: '0.76rem', color: active ? '#f472b6' : 'white' }}>{opt.label}</div>
+                            <div style={{ fontSize: '0.68rem', color: active ? '#34d399' : 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>{opt.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', fontWeight: 800 }}>Porcentaje de Beca / Descuento</label>
                     <select 
                       className="form-input" 
                       value={userScholarship} 
-                      onChange={e => setUserScholarship(parseInt(e.target.value))} 
-                      style={{ background: 'var(--bg-elevated)', color: 'white', height: '36px' }}
+                      onChange={e => setUserScholarship(parseInt(e.target.value, 10))} 
+                      style={{ background: 'var(--bg-elevated)', color: 'white', height: '38px' }}
                     >
-                      <option value={0}>0% - Sin Beca (Pago Completo)</option>
-                      <option value={25}>25% Beca Parcial (Paga 75%)</option>
-                      <option value={50}>50% Media Beca (Paga 50%)</option>
-                      <option value={75}>75% Beca Mayor (Paga 25%)</option>
-                      <option value={100}>100% Beca Completa (Pago Liberado / Gratis)</option>
+                      <option value={0}>0% - Sin Beca (Pago Completo $45.000)</option>
+                      <option value={22}>22% - Beca Especial / Convenio ($45.000 → $35.000)</option>
+                      <option value={25}>25% - Beca Parcial (Paga 75% → $33.750)</option>
+                      <option value={50}>50% - Media Beca (Paga 50% → $22.500)</option>
+                      <option value={75}>75% - Beca Mayor (Paga 25% → $11.250)</option>
+                      <option value={100}>100% - Beca Completa (Pago Liberado / Gratis)</option>
                     </select>
                   </div>
 
@@ -2288,6 +2376,11 @@ export default function AdminDashboard() {
                                     <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(245,158,11,0.2)', color: '#FBBF24', fontWeight: 800 }}>
                                       {pay.payment_method === 'transferencia' ? '🏦 Transferencia' : '💳 Mercado Pago'}
                                     </span>
+                                    {Number(pay.student?.scholarship_percent || 0) > 0 && (
+                                      <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(236, 72, 153, 0.22)', border: '1px solid rgba(236, 72, 153, 0.45)', color: '#F472B6', fontWeight: 900 }}>
+                                        🎓 Beca {pay.student.scholarship_percent}% Aplicada
+                                      </span>
+                                    )}
                                   </div>
                                   <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.76rem', marginTop: '3px' }}>
                                     {studentEmail} • Informado: {dateFormatted}
@@ -2593,6 +2686,11 @@ export default function AdminDashboard() {
                                           PROFESOR
                                         </span>
                                       )}
+                                      {Number(st.scholarship_percent || 0) > 0 && Number(st.scholarship_percent) < 100 && (
+                                        <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: 'rgba(236, 72, 153, 0.18)', border: '1px solid rgba(236, 72, 153, 0.4)', color: '#f472b6', borderRadius: '6px', fontWeight: 800 }}>
+                                          🎓 Beca {st.scholarship_percent}% (${calculateDiscountedMonthlyPrice(45000, st.scholarship_percent).toLocaleString('es-CL')}/mes)
+                                        </span>
+                                      )}
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
                                       {st.email} • Faixa {getBeltLabel(st.belt)} ({st.graus || 0}º Grau)
@@ -2652,6 +2750,12 @@ export default function AdminDashboard() {
                                     type="button"
                                     onClick={() => {
                                       setPayStudentId(st.id);
+                                      const defaultSrvId = payServiceId || allServices[0]?.id || '';
+                                      if (!payServiceId && defaultSrvId) setPayServiceId(defaultSrvId);
+                                      const calcAmt = st.pendingPayment?.amount !== undefined && st.pendingPayment?.amount !== null
+                                        ? Number(st.pendingPayment.amount)
+                                        : calculateManualPaymentAmount(st.id, defaultSrvId, payMonths);
+                                      setPayAmount(String(calcAmt));
                                       setMembershipSubTab('payment');
                                     }}
                                     style={{
@@ -2704,7 +2808,17 @@ export default function AdminDashboard() {
                         </label>
                         <select
                           value={payStudentId}
-                          onChange={(e) => setPayStudentId(e.target.value)}
+                          onChange={(e) => {
+                            const newStId = e.target.value;
+                            setPayStudentId(newStId);
+                            if (newStId) {
+                              const stObj = allProfiles.find(p => p.id === newStId);
+                              const calcAmt = stObj?.pendingPayment?.amount !== undefined && stObj?.pendingPayment?.amount !== null
+                                ? Number(stObj.pendingPayment.amount)
+                                : calculateManualPaymentAmount(newStId, payServiceId, payMonths);
+                              setPayAmount(String(calcAmt));
+                            }
+                          }}
                           required
                           style={{
                             width: '100%',
@@ -2719,11 +2833,46 @@ export default function AdminDashboard() {
                           <option value="">-- Seleccionar Alumno --</option>
                           {allProfiles.map(p => (
                             <option key={p.id} value={p.id}>
-                              {p.name} ({p.email}) - {p.computedStatus.toUpperCase()}
+                              {p.name} ({p.email}) - {p.computedStatus.toUpperCase()}{Number(p.scholarship_percent || 0) > 0 ? ` • BECA ${p.scholarship_percent}%` : ''}
                             </option>
                           ))}
                         </select>
                       </div>
+
+                      {/* Aviso automático de Beca / Descuento o Transferencia Pendiente del alumno seleccionado */}
+                      {(() => {
+                        const stObj = allProfiles.find(p => p.id === payStudentId);
+                        if (!stObj) return null;
+                        const pct = Number(stObj.scholarship_percent || 0);
+                        const srvObj = allServices.find(s => s.id === payServiceId) || allServices[0];
+                        const baseP = Number(srvObj?.price || 45000);
+                        const discMonthly = calculateDiscountedMonthlyPrice(baseP, pct);
+
+                        if (pct <= 0 && !stObj.pendingPayment) return null;
+
+                        return (
+                          <div style={{
+                            background: 'rgba(236, 72, 153, 0.12)',
+                            border: '1px solid rgba(236, 72, 153, 0.4)',
+                            borderRadius: '10px',
+                            padding: '12px 16px',
+                            fontSize: '0.82rem',
+                            color: 'white',
+                            lineHeight: 1.45
+                          }}>
+                            {pct > 0 && (
+                              <div style={{ color: '#F472B6', fontWeight: 900, marginBottom: stObj.pendingPayment ? '6px' : 0 }}>
+                                🎓 Descuento Activo ({pct}% Beca): Tarifa base ${baseP.toLocaleString('es-CL')} → Tarifa mensual con descuento <strong>${discMonthly.toLocaleString('es-CL')} CLP</strong>. El monto inferior se ajustó automáticamente.
+                              </div>
+                            )}
+                            {stObj.pendingPayment && (
+                              <div style={{ color: '#FBBF24', fontWeight: 800 }}>
+                                ⏳ Este alumno tiene un aviso de pago pendiente por <strong>${Number(stObj.pendingPayment.amount || 0).toLocaleString('es-CL')} CLP</strong>{stObj.pendingPayment.notes ? ` (${stObj.pendingPayment.notes})` : ''}. Al confirmar aquí, esa solicitud quedará aprobada.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div>
                         <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
@@ -2734,11 +2883,7 @@ export default function AdminDashboard() {
                           onChange={(e) => {
                             const sId = e.target.value;
                             setPayServiceId(sId);
-                            const srv = allServices.find(s => s.id === sId);
-                            if (srv) {
-                              const months = parseInt(payMonths, 10) || 1;
-                              setPayAmount(String((srv.price || 45000) * months));
-                            }
+                            setPayAmount(String(calculateManualPaymentAmount(payStudentId, sId, payMonths)));
                           }}
                           required
                           style={{
@@ -2770,16 +2915,7 @@ export default function AdminDashboard() {
                             onChange={(e) => {
                               const m = e.target.value;
                               setPayMonths(m);
-                              const srv = allServices.find(s => s.id === payServiceId);
-                              if (srv) {
-                                const mult = parseInt(m, 10) || 1;
-                                let disc = 0;
-                                if (mult === 3) disc = 0.10;
-                                if (mult === 6) disc = 0.15;
-                                if (mult === 12) disc = 0.25;
-                                const total = Math.round((srv.price || 45000) * mult * (1 - disc));
-                                setPayAmount(String(total));
-                              }
+                              setPayAmount(String(calculateManualPaymentAmount(payStudentId, payServiceId, m)));
                             }}
                             style={{
                               width: '100%',
