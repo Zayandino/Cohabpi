@@ -66,3 +66,24 @@ Permite al administrador o recepcionista registrar pagos directos:
 * En [`RegistrationFlow.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/RegistrationFlow.jsx), los bloques horarios y los profesores asignados por bloque se leen directamente desde `cohab_services`.
 * En [`AdminDashboard.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/AdminDashboard.jsx), la función `syncOfficialServices` no sobreescribe ni duplica registros existentes si el administrador modificó los servicios.
 
+---
+
+## 5. Pago por Transferencia Bancaria y Habilitación en 1 Clic (`Migración 015`)
+* **Flujo del Alumno ([`Profile.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/Profile.jsx) y [`FormalizationFlow.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/FormalizationFlow.jsx)):**
+  * El alumno o apoderado puede elegir **🏦 Transferencia Bancaria** junto a las opciones de Mercado Pago (Débito y Crédito).
+  * Se muestran los datos bancarios oficiales de COHAB Los Andes (almacenados en `public.cohab_bank_settings` y editables desde el panel de Administración en la sub-pestaña **🏦 Datos Transferencia**).
+  * Al confirmar con **"Ya transferí — Solicitar Habilitación"**, se invoca el RPC `public.cohab_submit_transfer_payment()`, que registra el pago en estado `pending` y muestra el banner amarillo **⏳ Pago Pendiente de Validación** en [`Dashboard.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/Dashboard.jsx), [`Profile.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/Profile.jsx) y [`Payments.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/Payments.jsx).
+* **Alerta y Habilitación del Administrador ([`AdminDashboard.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/AdminDashboard.jsx)):**
+  * El Administrador recibe una alerta destacada en la consola principal y en la pestaña **Membresías y Pagos** con las solicitudes pendientes.
+  * Con el botón **`✅ Habilitar hasta el Próximo Mes`** (RPC `public.cohab_approve_pending_payment()`), el sistema aprueba el pago, completa la sesión y activa automáticamente la suscripción del alumno (y familiares incluidos) por el período correspondiente (`+1 mes` hasta el próximo mes o los meses de prepago contratados).
+
+---
+
+## 6. Regla de Asistencia: Manual Exclusiva para Staff y Solo QR para Alumnos
+* **Nivel Base de Datos (`RLS` en `public.cohab_attendance`):**
+  * Las políticas `attendance_insert_policy`, `attendance_update_policy` y `attendance_delete_policy` permiten escritura directa únicamente a miembros del Staff (`public.cohab_is_instructor() OR public.cohab_is_admin()`).
+  * Los alumnos regulares solo pueden registrar su asistencia escaneando el código QR proyectado por el profesor mediante la función segura `public.cohab_mark_attendance_qr()`.
+* **Nivel Interfaz ([`Dashboard.jsx`](file:///c:/Users/eduar/Cohabpi/cohab-frontend/src/pages/Dashboard.jsx)):**
+  * En *"Tus Clases de Hoy"*, los botones manuales **Marcar Clase** y **Quitar** solo se muestran si el usuario pertenece al Staff (`is_instructor` o `admin`). Para los alumnos regulares se muestra únicamente el botón **`📷 Solo vía QR`** que abre la cámara lectora de QR.
+
+

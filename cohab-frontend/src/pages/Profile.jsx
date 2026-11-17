@@ -35,13 +35,17 @@ export default function Profile() {
   const [enrollments, setEnrollments] = useState({});
   const [activeSubscriptions, setActiveSubscriptions] = useState([]);
   const [prepayPeriod, setPrepayPeriod] = useState(1); // 1, 3, 6, 12 months
-  const [paymentMethod, setPaymentMethod] = useState('debito'); // 'debito' or 'credito'
+  const [paymentMethod, setPaymentMethod] = useState('debito'); // 'debito' | 'credito' | 'transferencia'
   const [installments, setInstallments] = useState(0); // 0, 3, 6, 12 cuotas
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [discounts, setDiscounts] = useState([]);
   const [signedWaivers, setSignedWaivers] = useState({});
+  const [pendingPayments, setPendingPayments] = useState([]);
+  const [bankSettings, setBankSettings] = useState(null);
+  const [transferNotes, setTransferNotes] = useState('');
+  const [copiedBank, setCopiedBank] = useState(false);
 
   const getPersonAge = (person) => {
     if (!person) return 0;
@@ -185,19 +189,45 @@ export default function Profile() {
           console.warn("No se pudieron cargar descuentos en perfil:", discErr);
         }
         
-        // Fetch active subscriptions to pre-load
+        // Fetch active subscriptions to pre-load (solo vigentes con end_date >= hoy)
         let activeSubs = [];
+        const todayStr = new Date().toISOString().split('T')[0];
         try {
           const personIds = [profile.id, ...(family || []).map(f => f.id)];
           const { data: subsData } = await supabase
             .from('cohab_subscriptions')
-            .select('profile_id, service_id')
+            .select('profile_id, service_id, end_date, status')
             .in('profile_id', personIds)
             .eq('status', 'active');
-          activeSubs = subsData || [];
+          activeSubs = (subsData || []).filter(s => !s.end_date || s.end_date >= todayStr);
           setActiveSubscriptions(activeSubs);
         } catch (subsErr) {
           console.warn("No se pudieron cargar suscripciones activas:", subsErr);
+        }
+
+        // Cargar pagos pendientes de validación (Transferencia o Mercado Pago en proceso)
+        try {
+          const { data: pendData } = await supabase
+            .from('cohab_payments')
+            .select('*')
+            .eq('profile_id', profile.id)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false });
+          setPendingPayments(pendData || []);
+        } catch (pendErr) {
+          console.warn("No se pudieron cargar pagos pendientes:", pendErr);
+        }
+
+        // Cargar datos bancarios para transferencia
+        try {
+          const { data: bankData } = await supabase
+            .from('cohab_bank_settings')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+          if (bankData) setBankSettings(bankData);
+        } catch (bankErr) {
+          console.warn("No se pudieron cargar datos bancarios:", bankErr);
         }
 
         // Helper to get default service based on age
@@ -222,8 +252,8 @@ export default function Profile() {
             const uniqueServiceIds = [...new Set(personSubs.map(s => s.service_id))];
             return uniqueServiceIds.map(sid => ({ serviceId: sid, tierIdx: 0 }));
           } else {
-            if (isMain && profile?.status !== 'activo') {
-              const defId = getDefaultServiceForAge(age, servicesData);
+            if (isMain) {
+              const defId = getDefaultServiceForAge(age, uniqueServices);
               return defId ? [{ serviceId: defId, tierIdx: 0 }] : [];
             }
             return [];
@@ -280,6 +310,13 @@ export default function Profile() {
     }
   };
 
+  const isPersonSubscriptionActive = (personKey) => {
+    const targetId = personKey === 'main' ? profile?.id : personKey;
+    if (!targetId) return false;
+    if (getScholarshipPercentForPerson(personKey) === 100) return true;
+    return activeSubscriptions.some(sub => sub.profile_id === targetId);
+  };
+
   const calculateTotal = () => {
     let subtotal = 0;
     let peopleWithServicesCount = 0;
@@ -292,17 +329,10 @@ export default function Profile() {
       }
       
       personServices.forEach(entry => {
-        // Check if this specific service for this person is already active
-        const isAlreadyActive = activeSubscriptions.some(
-          sub => sub.profile_id === personId && sub.service_id === entry.serviceId
-        );
-
-        if (!isAlreadyActive) {
-          billableServicesCount++;
-        }
+        billableServicesCount++;
 
         const service = services.find(s => s.id === entry.serviceId);
-        if (service && !isAlreadyActive) {
+        if (service) {
           const hasTiers = service.pricing_tiers && service.pricing_tiers.length > 0;
           let basePrice = 0;
           if (hasTiers) {
@@ -394,28 +424,6 @@ export default function Profile() {
   };
 
   const validateWaiversBeforeAction = () => {
-    const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
-    
-    for (const pId of activePeople) {
-      if (pId === 'main') {
-        if (!profile?.waiver_signed) {
-          const mainWaiver = signedWaivers.main;
-          if (!mainWaiver?.health || !mainWaiver?.waiver) {
-            alert(`⚠️ Debes completar y aceptar los requisitos obligatorios de salud y liberación de responsabilidad para ti ("${profile?.name || 'Titular'}").`);
-            return false;
-          }
-        }
-      } else {
-        const famMember = family.find(f => f.id === pId);
-        if (famMember && !famMember.waiver_signed) {
-          const famWaiver = signedWaivers[pId];
-          if (!famWaiver?.health || !famWaiver?.waiver) {
-            alert(`⚠️ Debes completar y aceptar los requisitos obligatorios de salud y liberación de responsabilidad por tu familiar "${famMember.name}".`);
-            return false;
-          }
-        }
-      }
-    }
     return true;
   };
 
@@ -474,18 +482,12 @@ export default function Profile() {
         }
       }
 
-      // 1. Crear la sesión del carrito en Supabase localmente (tabla cohab_checkout_sessions)
-      // FILTRO DE SEGURIDAD: Solo enviar al carrito las disciplinas que se están cobrando (no activas)
+      // 1. Crear la sesión del carrito en Supabase (tabla cohab_checkout_sessions)
       const billableEnrollments = {};
       Object.keys(enrollments).forEach(pId => {
         const personServices = enrollments[pId] || [];
-        const filteredServices = personServices.filter(entry => {
-           return !activeSubscriptions.some(
-             sub => sub.profile_id === pId && sub.service_id === entry.serviceId
-           );
-        });
-        if (filteredServices.length > 0) {
-           billableEnrollments[pId] = filteredServices;
+        if (personServices.length > 0) {
+           billableEnrollments[pId] = personServices;
         }
       });
 
@@ -494,7 +496,7 @@ export default function Profile() {
         .insert([{
           payer_id: profile.id,
           total_amount: totals.finalTotal,
-          status: 'pending',
+          status: paymentMethod === 'transferencia' ? 'transfer_pending' : 'pending',
           cart_data: {
             months: prepayPeriod,
             enrollments: billableEnrollments
@@ -507,13 +509,34 @@ export default function Profile() {
       
       const checkoutSessionId = sessionData.id;
 
-      // 2. Llamar a la Edge Function para generar la preferencia de Mercado Pago
+      // OPCIÓN A: PAGO MEDIANTE TRANSFERENCIA BANCARIA (Notificar al Admin y dejar en revisión)
+      if (paymentMethod === 'transferencia') {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('cohab_submit_transfer_payment', {
+          p_checkout_session_id: checkoutSessionId,
+          p_notes: transferNotes || null
+        });
+
+        if (rpcError) throw rpcError;
+        if (rpcData && rpcData.success === false) {
+          throw new Error(rpcData.error || 'No se pudo registrar el aviso de transferencia.');
+        }
+
+        setShowCheckoutModal(false);
+        setIsProcessing(false);
+        navigate('/dashboard?pago=pendiente');
+        return;
+      }
+
+      // OPCIÓN B: PAGO MEDIANTE MERCADO PAGO (Débito / Crédito)
       const { data, error } = await supabase.functions.invoke('create-preference', {
         body: {
           checkout_session_id: checkoutSessionId,
           payer_id: profile.id,
           payer_email: profile.email || `${profile.id}@cohab.app`,
+          payer_name: profile.name || 'Alumno COHAB',
           total_amount: totals.finalTotal,
+          installments: paymentMethod === 'credito' ? installments : 0,
+          description: `Membresía COHAB Los Andes (${prepayPeriod} ${prepayPeriod === 1 ? 'mes' : 'meses'})`,
           origin_url: window.location.origin
         }
       });
@@ -1159,6 +1182,30 @@ export default function Profile() {
               </p>
             </div>
 
+            {/* BANNER DE PAGO PENDIENTE DE VALIDACIÓN */}
+            {pendingPayments.length > 0 && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '12px'
+              }}>
+                <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>⏳</span>
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ color: '#F59E0B', margin: '0 0 4px 0', fontSize: '0.9rem', fontWeight: 800 }}>
+                    Pago Pendiente de Validación
+                  </h4>
+                  <p style={{ color: 'var(--text-light)', margin: 0, fontSize: '0.78rem', lineHeight: 1.4 }}>
+                    Se registró tu aviso de pago por <strong>{formats.format(pendingPayments[0].amount || 0)}</strong> ({pendingPayments[0].payment_method === 'transferencia' ? 'Transferencia Bancaria' : 'Mercado Pago'}). El administrador verificará la transacción y habilitará tu membresía hasta el próximo mes.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {loadingServices ? (
               <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>Cargando planes y disciplinas...</p>
             ) : (
@@ -1179,42 +1226,36 @@ export default function Profile() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <span style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>{profile?.name || 'Tú (Titular)'}</span>
-                              {profile?.status === 'activo' && (
+                              {getScholarshipPercentForPerson('main') > 0 && (
                                 <span style={{ 
                                   padding: '2px 8px', 
-                                  background: profile?.scholarship_percent === 100 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 180, 216, 0.12)', 
-                                  border: `1px solid ${profile?.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)'}`, 
-                                  color: profile?.scholarship_percent === 100 ? '#10B981' : 'var(--aurora)', 
+                                  background: getScholarshipPercentForPerson('main') === 100 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 180, 216, 0.12)', 
+                                  border: `1px solid ${getScholarshipPercentForPerson('main') === 100 ? '#10B981' : 'var(--aurora)'}`, 
+                                  color: getScholarshipPercentForPerson('main') === 100 ? '#10B981' : 'var(--aurora)', 
                                   borderRadius: '12px', 
                                   fontSize: '0.62rem', 
                                   fontWeight: 900,
                                   letterSpacing: '0.5px'
                                 }}>
-                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : (profile?.scholarship_percent > 0 ? `🎓 BECA ${profile.scholarship_percent}% ACTIVA` : 'BECA ACTIVA')}
-                                </span>
-                              )}
-                              {profile?.status !== 'activo' && profile?.scholarship_percent > 0 && (
-                                <span style={{ 
-                                  padding: '2px 8px', 
-                                  background: 'rgba(245, 158, 11, 0.12)', 
-                                  border: '1px solid #F59E0B', 
-                                  color: '#F59E0B', 
-                                  borderRadius: '12px', 
-                                  fontSize: '0.62rem', 
-                                  fontWeight: 900,
-                                  letterSpacing: '0.5px'
-                                }}>
-                                  {profile?.scholarship_percent === 100 ? '🎓 BECA 100% ACTIVA' : `🎓 BECA ${profile.scholarship_percent}% PENDIENTE`}
+                                  {getScholarshipPercentForPerson('main') === 100 ? '🎓 BECA 100% ACTIVA' : `🎓 BECA ${getScholarshipPercentForPerson('main')}% ACTIVA`}
                                 </span>
                               )}
                             </div>
                             <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>A mí mismo</div>
                           </div>
                         </div>
-                        {profile?.status === 'activo' && (
+                        {isPersonSubscriptionActive('main') ? (
                           <div style={{ color: '#10B981', fontWeight: 900, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16,185,129,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.15)' }}>
                             <span>AL DÍA</span>
                             <span style={{ fontSize: '0.9rem' }}>✓</span>
+                          </div>
+                        ) : pendingPayments.length > 0 ? (
+                          <div style={{ color: '#F59E0B', fontWeight: 900, fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(245,158,11,0.1)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(245,158,11,0.3)' }}>
+                            <span>⏳ EN REVISIÓN</span>
+                          </div>
+                        ) : (
+                          <div style={{ color: '#F87171', fontWeight: 800, fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(239,68,68,0.08)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            <span>SIN PLAN ACTIVO</span>
                           </div>
                         )}
                       </div>
@@ -1282,7 +1323,7 @@ export default function Profile() {
 
                     {/* Miembros Familiares */}
                     {family.map(m => {
-                      const isMemberActive = m.status === 'activo';
+                      const isMemberActive = isPersonSubscriptionActive(m.id);
                       return (
                         <div key={m.id} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -1441,7 +1482,7 @@ export default function Profile() {
                     💳 3. Método de Pago
                   </h4>
 
-                  <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '15px' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -1449,37 +1490,55 @@ export default function Profile() {
                         setInstallments(0);
                       }}
                       style={{
-                        flex: 1,
-                        height: '38px',
+                        height: '42px',
                         borderRadius: '8px',
                         border: '1px solid',
                         borderColor: paymentMethod === 'debito' ? 'var(--aurora)' : 'rgba(255,255,255,0.05)',
-                        background: paymentMethod === 'debito' ? 'rgba(0, 180, 216, 0.08)' : 'rgba(255,255,255,0.01)',
+                        background: paymentMethod === 'debito' ? 'rgba(0, 180, 216, 0.12)' : 'rgba(255,255,255,0.01)',
                         color: paymentMethod === 'debito' ? 'white' : 'var(--text-muted)',
                         fontWeight: 700,
-                        fontSize: '0.8rem',
+                        fontSize: '0.78rem',
                         cursor: 'pointer'
                       }}
                     >
-                      Débito
+                      💳 Débito (MP)
                     </button>
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('credito')}
                       style={{
-                        flex: 1,
-                        height: '38px',
+                        height: '42px',
                         borderRadius: '8px',
                         border: '1px solid',
                         borderColor: paymentMethod === 'credito' ? 'var(--aurora)' : 'rgba(255,255,255,0.05)',
-                        background: paymentMethod === 'credito' ? 'rgba(0, 180, 216, 0.08)' : 'rgba(255,255,255,0.01)',
+                        background: paymentMethod === 'credito' ? 'rgba(0, 180, 216, 0.12)' : 'rgba(255,255,255,0.01)',
                         color: paymentMethod === 'credito' ? 'white' : 'var(--text-muted)',
                         fontWeight: 700,
-                        fontSize: '0.8rem',
+                        fontSize: '0.78rem',
                         cursor: 'pointer'
                       }}
                     >
-                      Crédito
+                      💳 Crédito (MP)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod('transferencia');
+                        setInstallments(0);
+                      }}
+                      style={{
+                        height: '42px',
+                        borderRadius: '8px',
+                        border: '1px solid',
+                        borderColor: paymentMethod === 'transferencia' ? '#10B981' : 'rgba(255,255,255,0.05)',
+                        background: paymentMethod === 'transferencia' ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.01)',
+                        color: paymentMethod === 'transferencia' ? '#34D399' : 'var(--text-muted)',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🏦 Transferencia
                     </button>
                   </div>
 
@@ -1510,6 +1569,23 @@ export default function Profile() {
                           </button>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {paymentMethod === 'transferencia' && (
+                    <div style={{
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      fontSize: '0.76rem',
+                      color: 'var(--text-light)',
+                      lineHeight: 1.45
+                    }}>
+                      <strong style={{ color: '#34D399', display: 'block', marginBottom: '4px' }}>
+                        🏦 Pago directo por Transferencia Bancaria
+                      </strong>
+                      Al presionar <strong>Proceder al Pago</strong> verás los datos de cuenta de COHAB Los Andes para transferir y notificar al administrador, quien habilitará tu membresía hasta el próximo mes.
                     </div>
                   )}
                 </div>
@@ -1642,7 +1718,7 @@ export default function Profile() {
                         </div>
                       ) : (
                         (() => {
-                          const hasAnyActiveMember = profile?.status === 'activo' || family.some(m => m.status === 'activo');
+                          const hasAnyActiveMember = isPersonSubscriptionActive('main') || family.some(m => isPersonSubscriptionActive(m.id));
                           
                           if (hasAnyActiveMember) {
                             const activePeople = Object.keys(enrollments).filter(pId => (enrollments[pId] || []).length > 0);
@@ -1878,30 +1954,104 @@ export default function Profile() {
                 <div>
                   <CreditCard size={48} color="var(--aurora)" style={{ margin: '0 auto 15px' }} />
                   <h3 style={{ fontFamily: 'var(--font-display)', color: 'white', fontSize: '1.3rem', marginBottom: '8px' }}>
-                    Pasarela de Pago Segura
+                    {paymentMethod === 'transferencia' ? 'Pago por Transferencia Bancaria' : 'Pasarela de Pago Segura'}
                   </h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '22px' }}>
-                    Estás a un paso de renovar el entrenamiento. La transacción se procesará a través de Mercado Pago.
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '18px' }}>
+                    {paymentMethod === 'transferencia'
+                      ? 'Realiza la transferencia por el monto indicado y presiona el botón inferior para avisar al administrador y habilitar tu membresía.'
+                      : 'Estás a un paso de renovar el entrenamiento. La transacción se procesará a través de Mercado Pago.'}
                   </p>
 
                   {(() => {
                     const totals = calculateTotal();
+                    const bName = bankSettings?.bank_name || 'Banco de Chile / BancoEstado';
+                    const bType = bankSettings?.account_type || 'Cuenta Vista / Corriente';
+                    const bNum = bankSettings?.account_number || 'Solicitar en recepción';
+                    const bHolder = bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos (COHAB Los Andes)';
+                    const bRut = bankSettings?.holder_rut || '';
+                    const bEmail = bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com';
+
                     return (
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '15px', borderRadius: '8px', textAlign: 'left', marginBottom: '25px' }}>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Monto a Transferir</div>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '15px', borderRadius: '8px', textAlign: 'left', marginBottom: '18px' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Monto Exacto a Pagar</div>
                         <div style={{ fontSize: '1.4rem', color: 'white', fontWeight: 900, fontFamily: 'var(--font-display)', marginTop: '4px' }}>
                           {formats.format(totals.finalTotal)}
                         </div>
                         
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginTop: '12px' }}>Titular del Pago</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginTop: '10px' }}>Titular del Pago</div>
                         <div style={{ fontSize: '0.85rem', color: 'white', fontWeight: 700, marginTop: '2px' }}>
                           {profile?.name}
                         </div>
 
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginTop: '12px' }}>Método de Selección</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginTop: '10px' }}>Método Seleccionado</div>
                         <div style={{ fontSize: '0.85rem', color: 'var(--aurora)', fontWeight: 800, textTransform: 'uppercase', marginTop: '2px' }}>
-                          {paymentMethod === 'debito' ? '💳 Débito' : `💳 Crédito (${installments === 0 ? '1 pago' : `${installments} cuotas sin interés`})`}
+                          {paymentMethod === 'transferencia'
+                            ? '🏦 Transferencia Bancaria (Habilitación Admin)'
+                            : paymentMethod === 'debito'
+                            ? '💳 Débito (Mercado Pago)'
+                            : `💳 Crédito (${installments === 0 ? '1 pago' : `${installments} cuotas sin interés`})`}
                         </div>
+
+                        {paymentMethod === 'transferencia' && (
+                          <div style={{
+                            marginTop: '14px',
+                            paddingTop: '12px',
+                            borderTop: '1px dashed rgba(255,255,255,0.1)',
+                            fontSize: '0.78rem',
+                            color: 'var(--text-light)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px'
+                          }}>
+                            <div style={{ color: '#34D399', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '2px' }}>
+                              Datos Bancarios COHAB:
+                            </div>
+                            <div><strong>Titular:</strong> {bHolder}</div>
+                            {bRut && <div><strong>RUT:</strong> {bRut}</div>}
+                            <div><strong>Banco:</strong> {bName}</div>
+                            <div><strong>Tipo de Cuenta:</strong> {bType}</div>
+                            <div><strong>N° de Cuenta:</strong> {bNum}</div>
+                            <div><strong>Correo:</strong> {bEmail}</div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = `Titular: ${bHolder}\n${bRut ? `RUT: ${bRut}\n` : ''}Banco: ${bName}\nTipo: ${bType}\nCuenta: ${bNum}\nCorreo: ${bEmail}\nMonto: ${totals.finalTotal}`;
+                                navigator.clipboard?.writeText(text);
+                                setCopiedBank(true);
+                                setTimeout(() => setCopiedBank(false), 2500);
+                              }}
+                              style={{
+                                marginTop: '8px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                color: '#34D399',
+                                fontWeight: 800,
+                                fontSize: '0.74rem',
+                                cursor: 'pointer',
+                                textAlign: 'center'
+                              }}
+                            >
+                              {copiedBank ? '✅ ¡Datos copiados al portapapeles!' : '📋 Copiar Datos para Transferir'}
+                            </button>
+
+                            <div style={{ marginTop: '10px' }}>
+                              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 700 }}>
+                                N° Operación / Banco o Comentario (Opcional):
+                              </label>
+                              <input
+                                type="text"
+                                value={transferNotes}
+                                onChange={(e) => setTransferNotes(e.target.value)}
+                                placeholder="Ej: Transferido desde Banco de Chile / Comprobante #1234"
+                                className="form-input"
+                                style={{ height: '34px', fontSize: '0.78rem', margin: 0, background: 'rgba(0,0,0,0.35)', color: 'white' }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -1917,7 +2067,9 @@ export default function Profile() {
                         margin: '0 auto 15px',
                         animation: 'spin 1s linear infinite'
                       }} />
-                      <p style={{ color: 'white', fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Procesando con la entidad bancaria...</p>
+                      <p style={{ color: 'white', fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>
+                        {paymentMethod === 'transferencia' ? 'Enviando aviso de transferencia al administrador...' : 'Conectando con Mercado Pago...'}
+                      </p>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginTop: '4px' }}>No cierres ni recargues esta pestaña</p>
                     </div>
                   ) : (
@@ -1927,16 +2079,18 @@ export default function Profile() {
                         className="auth-btn"
                         style={{
                           width: '100%',
-                          height: '42px',
+                          height: '44px',
                           background: 'linear-gradient(135deg, var(--aurora), #10B981)',
                           color: '#060B18',
                           fontWeight: 900,
                           fontSize: '0.82rem',
-                          letterSpacing: '1px',
+                          letterSpacing: '0.8px',
                           margin: 0
                         }}
                       >
-                        Pagar e Inscribir Grupo
+                        {paymentMethod === 'transferencia'
+                          ? '✅ Ya transferí — Solicitar Habilitación'
+                          : '💳 Pagar con Mercado Pago'}
                       </button>
                       <button
                         onClick={() => setShowCheckoutModal(false)}

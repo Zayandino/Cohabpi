@@ -43,12 +43,14 @@ export default function Dashboard() {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [totalAttendanceCount, setTotalAttendanceCount] = useState(0);
   const [hasActiveMembership, setHasActiveMembership] = useState(false);
+  const [pendingPaymentInfo, setPendingPaymentInfo] = useState(null);
   const [familyProfiles, setFamilyProfiles] = useState([]);
   // Selector de miembro: 'main' = titular, o el id de un familiar
   const [selectedMemberId, setSelectedMemberId] = useState('main');
   // Servicios y suscripción activa del titular (para mostrar horario dinámico)
   const [services, setServices] = useState([]);
   const [selfActiveSub, setSelfActiveSub] = useState(null);
+  const isStaff = Boolean(profile?.is_instructor || profile?.role === 'admin');
 
   // Estados del Escáner QR de Asistencia
   const [showScannerModal, setShowScannerModal] = useState(false);
@@ -117,6 +119,18 @@ export default function Dashboard() {
       const activeSelfSub = subsData?.find(s => !s.end_date || s.end_date >= nowStr) || null;
       setHasActiveMembership(isSelfScholarship100 || !!activeSelfSub);
       setSelfActiveSub(activeSelfSub);
+
+      // Consultar si tiene un pago pendiente de validación (transferencia o MP en revisión)
+      const payerLookupId = profile.parent_id || profile.id;
+      const { data: pendPay } = await supabase
+        .from('cohab_payments')
+        .select('id, amount, payment_method, status, created_at')
+        .eq('profile_id', payerLookupId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setPendingPaymentInfo(pendPay || null);
 
       // 2. Si el perfil logueado es titular (no tiene parent_id), cargar familiares
       if (!profile.parent_id) {
@@ -188,12 +202,13 @@ export default function Dashboard() {
   }, [selectedMemberId]);
 
   const handleMarkAttendance = async (classType) => {
+    if (!isStaff) return;
     const targetId = selectedMemberId === 'main' ? profile?.id : selectedMemberId;
     if (!targetId) return;
     try {
       const { error } = await supabase
         .from('cohab_attendance')
-        .insert([{ profile_id: targetId, class_type: classType }]);
+        .insert([{ profile_id: targetId, class_type: classType, method: 'manual', verified_by: profile?.id }]);
       if (error) throw error;
       fetchAttendance(targetId);
     } catch (err) {
@@ -202,6 +217,7 @@ export default function Dashboard() {
   };
 
   const handleUnmarkAttendance = async (classType) => {
+    if (!isStaff) return;
     const targetId = selectedMemberId === 'main' ? profile?.id : selectedMemberId;
     if (!targetId) return;
     try {
@@ -423,26 +439,38 @@ export default function Dashboard() {
 
       <div className="content">
 
-        {/* ── BANNER DE RESULTADO DE PAGO ── */}
-        {paymentBanner && (
-          <div style={{
-            background: paymentBanner.bg,
-            border: `1px solid ${paymentBanner.border}`,
-            borderRadius: '14px',
-            padding: '20px 20px 18px',
-            marginBottom: '24px',
-            textAlign: 'center',
-            animation: 'fadeIn 0.4s ease-out',
-          }}>
-            <div style={{ fontSize: '2.2rem', marginBottom: '8px' }}>{paymentBanner.emoji}</div>
-            <h3 style={{ color: 'white', fontFamily: 'var(--font-display)', fontSize: '1.1rem', margin: '0 0 6px 0' }}>
-              {paymentBanner.title}
-            </h3>
-            <p style={{ color: paymentBanner.color, fontSize: '0.82rem', margin: 0, lineHeight: 1.5 }}>
-              {paymentBanner.msg}
-            </p>
-          </div>
-        )}
+        {/* ── BANNER DE RESULTADO DE PAGO O TRANSFERENCIA PENDIENTE ── */}
+        {(() => {
+          const activeBanner = paymentBanner || (!hasActiveMembership && pendingPaymentInfo ? {
+            emoji: '⏳',
+            title: 'Pago pendiente de validación',
+            msg: `Informaste un pago de $${Number(pendingPaymentInfo.amount || 0).toLocaleString('es-CL')} (${pendingPaymentInfo.payment_method === 'transferencia' ? 'Transferencia Bancaria' : 'Mercado Pago'}). El administrador validará tu pago y habilitará tu membresía hasta el próximo mes.`,
+            bg: 'rgba(245, 158, 11, 0.10)',
+            border: 'rgba(245, 158, 11, 0.35)',
+            color: '#F59E0B',
+          } : null);
+
+          if (!activeBanner) return null;
+          return (
+            <div style={{
+              background: activeBanner.bg,
+              border: `1px solid ${activeBanner.border}`,
+              borderRadius: '14px',
+              padding: '20px 20px 18px',
+              marginBottom: '24px',
+              textAlign: 'center',
+              animation: 'fadeIn 0.4s ease-out',
+            }}>
+              <div style={{ fontSize: '2.2rem', marginBottom: '8px' }}>{activeBanner.emoji}</div>
+              <h3 style={{ color: 'white', fontFamily: 'var(--font-display)', fontSize: '1.1rem', margin: '0 0 6px 0' }}>
+                {activeBanner.title}
+              </h3>
+              <p style={{ color: activeBanner.color, fontSize: '0.82rem', margin: 0, lineHeight: 1.5 }}>
+                {activeBanner.msg}
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Greeting IDÉNTICO AL ORIGINAL */}
         <div className="greeting-block">
@@ -566,33 +594,35 @@ export default function Dashboard() {
           const nowStr = new Date().toISOString().split('T')[0];
           
           if (isFamiliar) {
-            // Para familiares, el estado depende de su membresía
-            const isActive = profile?.status === 'activo';
+            // Para familiares, el estado depende de su suscripción real o pago en revisión
+            const isActive = hasActiveMembership;
+            const isPendingPay = !isActive && !!pendingPaymentInfo;
             return (
               <div className={`status-glass ${isActive ? 'ok' : 'pending'}`} id="status-card-dashboard" style={{ marginBottom: '20px' }}>
                 <div className="status-row">
                   <div className="status-text-group">
                     <div className={`status-badge ${isActive ? 'ok' : 'pending'}`} id="status-badge-dashboard">
-                      <span className="dot"></span> <span id="status-badge-text">{isActive ? 'AL DÍA' : 'PENDIENTE'}</span>
+                      <span className="dot"></span> <span id="status-badge-text">{isActive ? 'AL DÍA' : (isPendingPay ? 'PAGO EN REVISIÓN' : 'PENDIENTE')}</span>
                     </div>
-                    <div className="status-main" id="status-main-text">{isActive ? 'Membresía Activa' : 'Membresía Inactiva'}</div>
+                    <div className="status-main" id="status-main-text">{isActive ? 'Membresía Activa' : (isPendingPay ? 'Pago Pendiente de Validación' : 'Membresía Inactiva')}</div>
                     <div className="status-sub" id="status-sub-text">
-                      {isActive ? 'Entrenamiento desbloqueado. ¡A rodar!' : 'Contacta a tu apoderado para activar tu plan.'}
+                      {isActive ? 'Entrenamiento desbloqueado. ¡A rodar!' : (isPendingPay ? 'El administrador habilitará tu membresía apenas valide la transferencia.' : 'Contacta a tu apoderado para activar tu plan.')}
                     </div>
                   </div>
-                  <div className="status-icon-big" id="status-icon-dashboard">{isActive ? '🛡️' : '⚠️'}</div>
+                  <div className="status-icon-big" id="status-icon-dashboard">{isActive ? '🛡️' : (isPendingPay ? '⏳' : '⚠️')}</div>
                 </div>
               </div>
             );
           } else {
             // Para el titular
             const hasActiveFam = familyProfiles.some(f => f.activeSub);
+            const isPendingPay = !hasActiveMembership && !hasActiveFam && !!pendingPaymentInfo;
             const statusClass = hasActiveMembership ? 'ok' : (hasActiveFam ? 'ok' : 'pending');
-            const badgeText = hasActiveMembership ? 'AL DÍA' : (hasActiveFam ? 'GRUPO ACTIVO' : 'SIN PLAN');
-            const mainText = hasActiveMembership ? 'Membresía Activa' : (hasActiveFam ? 'Familia Entrenando' : 'Membresías Inactivas');
+            const badgeText = hasActiveMembership ? 'AL DÍA' : (hasActiveFam ? 'GRUPO ACTIVO' : (isPendingPay ? 'PAGO EN REVISIÓN' : 'SIN PLAN'));
+            const mainText = hasActiveMembership ? 'Membresía Activa' : (hasActiveFam ? 'Familia Entrenando' : (isPendingPay ? 'Pago Pendiente de Validación' : 'Membresías Inactivas'));
             const subText = hasActiveMembership 
               ? 'Tú y tu familia tienen el tatami listo.' 
-              : (hasActiveFam ? 'Tus familiares tienen planes activos. Revisa la consola familiar.' : 'Regulariza las membresías de tu grupo familiar en el área de Pagos.');
+              : (hasActiveFam ? 'Tus familiares tienen planes activos. Revisa la consola familiar.' : (isPendingPay ? 'Tu aviso de pago fue enviado al administrador para habilitar tu membresía hasta el próximo mes.' : 'Regulariza las membresías de tu grupo familiar en el área de Pagos.'));
 
             return (
               <div className={`status-glass ${statusClass}`} id="status-card-dashboard" style={{ marginBottom: '20px' }}>
@@ -604,7 +634,7 @@ export default function Dashboard() {
                     <div className="status-main" id="status-main-text">{mainText}</div>
                     <div className="status-sub" id="status-sub-text">{subText}</div>
                   </div>
-                  <div className="status-icon-big" id="status-icon-dashboard">{hasActiveMembership || hasActiveFam ? '🛡️' : '⚠️'}</div>
+                  <div className="status-icon-big" id="status-icon-dashboard">{hasActiveMembership || hasActiveFam ? '🛡️' : (isPendingPay ? '⏳' : '⚠️')}</div>
                 </div>
               </div>
             );
@@ -875,7 +905,12 @@ export default function Dashboard() {
                       const classTypeId = `${selfActiveSub.service_id}_${block.start.replace(':','')}`;
                       const attended = attendanceRecords.some(r => {
                         const checkDate = new Date(r.checked_at);
-                        return checkDate.toDateString() === new Date().toDateString() && r.class_type === classTypeId;
+                        const isSameDay = checkDate.toDateString() === new Date().toDateString();
+                        return isSameDay && (
+                          r.class_type === classTypeId ||
+                          r.service_id === selfActiveSub.service_id ||
+                          r.class_type === service.name
+                        );
                       });
                       return (
                         <div
@@ -900,10 +935,35 @@ export default function Dashboard() {
                           {attended ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <span style={{ color: '#34D399', fontWeight: 800, fontSize: '0.8rem' }}>✔ ASISTIDO</span>
-                              <button onClick={() => handleUnmarkAttendance(classTypeId)} style={{ background: 'rgba(255, 77, 77, 0.1)', border: 'none', color: '#FF4D4D', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}>Quitar</button>
+                              {isStaff && (
+                                <button onClick={() => handleUnmarkAttendance(classTypeId)} style={{ background: 'rgba(255, 77, 77, 0.1)', border: 'none', color: '#FF4D4D', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}>Quitar</button>
+                              )}
                             </div>
-                          ) : (
+                          ) : isStaff ? (
                             <button onClick={() => handleMarkAttendance(classTypeId)} style={{ background: 'linear-gradient(135deg, var(--aurora), #10B981)', border: 'none', color: '#060B18', fontWeight: 800, fontSize: '0.75rem', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', boxShadow: '0 2px 10px rgba(52, 211, 153, 0.2)' }}>Marcar Clase</button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={startQrScanner}
+                              style={{
+                                background: 'rgba(0, 180, 216, 0.12)',
+                                border: '1px solid rgba(0, 180, 216, 0.35)',
+                                color: 'var(--aurora)',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title="Los alumnos deben registrar su asistencia escaneando el código QR en el tatami"
+                            >
+                              <QrCode size={13} />
+                              <span>Solo vía QR</span>
+                            </button>
                           )}
                         </div>
                       );

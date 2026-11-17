@@ -37,6 +37,10 @@ export default function FormalizationFlow() {
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [formalizationPayMethod, setFormalizationPayMethod] = useState('mercadopago'); // 'mercadopago' | 'transferencia'
+  const [bankSettings, setBankSettings] = useState(null);
+  const [transferNotes, setTransferNotes] = useState('');
+  const [copiedBank, setCopiedBank] = useState(false);
 
   // Cargar estudiantes del núcleo familiar y servicios
   useEffect(() => {
@@ -86,12 +90,21 @@ export default function FormalizationFlow() {
         const { data: servicesData } = await supabase
           .from('cohab_services')
           .select('*')
-          .order('price', { ascending: true });
+          .eq('is_active', true)
+          .order('name', { ascending: true });
 
         if (servicesData && servicesData.length > 0) {
           setServices(servicesData);
           setSelectedServiceId(servicesData[0].id);
         }
+
+        // 3. Cargar datos bancarios para opción de transferencia
+        const { data: bankData } = await supabase
+          .from('cohab_bank_settings')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+        if (bankData) setBankSettings(bankData);
       } catch (err) {
         console.error('Error al cargar datos:', err);
       } finally {
@@ -246,6 +259,16 @@ export default function FormalizationFlow() {
         if (consentError) throw consentError;
       }
 
+      // Marcar waiver_signed = true en cohab_profiles para sincronizar con Profile.jsx
+      await supabase
+        .from('cohab_profiles')
+        .update({ waiver_signed: true })
+        .eq('id', currentStudent.id);
+
+      if (currentStudent.isTitular && typeof refreshProfile === 'function') {
+        await refreshProfile();
+      }
+
       setStep(3); // Paso a pago de membresía
     } catch (err) {
       console.error('Error al guardar firma:', err);
@@ -255,7 +278,7 @@ export default function FormalizationFlow() {
     }
   };
 
-  // Procesar Pago de Membresía vía Mercado Pago
+  // Procesar Pago de Membresía vía Mercado Pago o Transferencia Bancaria
   const handleProceedPayment = async () => {
     setIsProcessingPayment(true);
     setError(null);
@@ -263,6 +286,14 @@ export default function FormalizationFlow() {
     try {
       const selectedPlan = services.find(s => s.id === selectedServiceId);
       if (!selectedPlan) throw new Error('Selecciona un plan de membresía.');
+
+      // Calcular descuento de beca si aplica
+      const studentObj = currentStudent.isTitular ? profile : currentStudent;
+      const scholarshipPct = Number(studentObj?.scholarship_percent || 0);
+      let finalAmount = Number(selectedPlan.price || 45000);
+      if (scholarshipPct > 0 && (selectedPlan.name.toLowerCase().includes('bjj') || selectedPlan.name.toLowerCase().includes('jiu jitsu'))) {
+        finalAmount = Math.round(finalAmount * (1 - scholarshipPct / 100));
+      }
 
       // 1. Guardar la sesión de checkout en cohab_checkout_sessions
       const personKey = currentStudent.isTitular ? 'main' : currentStudent.id;
@@ -278,21 +309,37 @@ export default function FormalizationFlow() {
         .insert({
           payer_id: user.id,
           cart_data: cartData,
-          total_amount: Number(selectedPlan.price),
-          status: 'pending'
+          total_amount: finalAmount,
+          status: formalizationPayMethod === 'transferencia' ? 'transfer_pending' : 'pending'
         })
         .select()
         .single();
 
       if (sessionError) throw sessionError;
 
-      // 2. Invocar Edge Function create-preference
+      // OPCIÓN A: Transferencia Bancaria
+      if (formalizationPayMethod === 'transferencia') {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('cohab_submit_transfer_payment', {
+          p_checkout_session_id: sessionData.id,
+          p_notes: transferNotes || null
+        });
+        if (rpcError) throw rpcError;
+        if (rpcData && rpcData.success === false) {
+          throw new Error(rpcData.error || 'No se pudo registrar el aviso de transferencia.');
+        }
+        navigate('/dashboard?pago=pendiente');
+        return;
+      }
+
+      // OPCIÓN B: Invocar Edge Function create-preference (Mercado Pago)
       const { data: prefData, error: prefError } = await supabase.functions.invoke('create-preference', {
         body: {
           checkout_session_id: sessionData.id,
           payer_id: user.id,
           payer_email: profile?.email || user.email,
-          total_amount: Number(selectedPlan.price),
+          payer_name: profile?.name || 'Alumno COHAB',
+          total_amount: finalAmount,
+          description: `Membresía COHAB: ${selectedPlan.name}`,
           origin_url: window.location.origin
         }
       });
@@ -845,6 +892,108 @@ export default function FormalizationFlow() {
               </div>
             </div>
 
+            {/* Selector de Método de Pago: Mercado Pago vs Transferencia */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'white', marginBottom: '8px' }}>
+                Elige tu Método de Pago:
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setFormalizationPayMethod('mercadopago')}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: formalizationPayMethod === 'mercadopago' ? '2px solid #009EE3' : '1px solid rgba(255,255,255,0.12)',
+                    background: formalizationPayMethod === 'mercadopago' ? 'rgba(0, 158, 227, 0.15)' : 'rgba(255,255,255,0.02)',
+                    color: 'white',
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  💳 Tarjeta Débito / Crédito (Mercado Pago)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormalizationPayMethod('transferencia')}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: formalizationPayMethod === 'transferencia' ? '2px solid #10B981' : '1px solid rgba(255,255,255,0.12)',
+                    background: formalizationPayMethod === 'transferencia' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.02)',
+                    color: 'white',
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🏦 Transferencia Bancaria
+                </button>
+              </div>
+            </div>
+
+            {formalizationPayMethod === 'transferencia' && (
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '14px',
+                padding: '14px',
+                fontSize: '0.78rem',
+                color: 'var(--text-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px'
+              }}>
+                <div style={{ color: '#34D399', fontWeight: 900, fontSize: '0.82rem' }}>
+                  🏦 Datos para Transferencia Bancaria COHAB
+                </div>
+                <div><strong>Titular:</strong> {bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos (COHAB Los Andes)'}</div>
+                {bankSettings?.holder_rut && <div><strong>RUT:</strong> {bankSettings.holder_rut}</div>}
+                <div><strong>Banco:</strong> {bankSettings?.bank_name || 'Banco de Chile / BancoEstado'}</div>
+                <div><strong>Tipo de Cuenta:</strong> {bankSettings?.account_type || 'Cuenta Vista / Corriente'}</div>
+                <div><strong>N° de Cuenta:</strong> {bankSettings?.account_number || 'Solicitar en recepción'}</div>
+                <div><strong>Correo:</strong> {bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com'}</div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = `Titular: ${bankSettings?.holder_name || 'Eduardo Javier Ambler Ríos'}\nBanco: ${bankSettings?.bank_name || ''}\nTipo: ${bankSettings?.account_type || ''}\nCuenta: ${bankSettings?.account_number || ''}\nCorreo: ${bankSettings?.confirmation_email || 'ambler.eduardo@gmail.com'}`;
+                    navigator.clipboard?.writeText(text);
+                    setCopiedBank(true);
+                    setTimeout(() => setCopiedBank(false), 2500);
+                  }}
+                  style={{
+                    marginTop: '4px',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    color: '#34D399',
+                    fontWeight: 800,
+                    fontSize: '0.74rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {copiedBank ? '✅ ¡Datos copiados!' : '📋 Copiar Datos Bancarios'}
+                </button>
+
+                <div style={{ marginTop: '6px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 700 }}>
+                    N° de Operación o Comentario (Opcional):
+                  </label>
+                  <input
+                    type="text"
+                    value={transferNotes}
+                    onChange={(e) => setTransferNotes(e.target.value)}
+                    placeholder="Ej: Transferencia BancoEstado / Comprobante #1234"
+                    className="form-input"
+                    style={{ height: '34px', fontSize: '0.78rem', margin: 0, background: 'rgba(0,0,0,0.35)', color: 'white' }}
+                  />
+                </div>
+              </div>
+            )}
+
             <button 
               type="button" 
               onClick={handleProceedPayment}
@@ -853,7 +1002,9 @@ export default function FormalizationFlow() {
                 width: '100%',
                 padding: '14px',
                 borderRadius: '14px',
-                background: 'linear-gradient(135deg, #009EE3, #007EB5)',
+                background: formalizationPayMethod === 'transferencia'
+                  ? 'linear-gradient(135deg, #10B981, #059669)'
+                  : 'linear-gradient(135deg, #009EE3, #007EB5)',
                 border: 'none',
                 color: 'white',
                 fontWeight: 800,
@@ -863,11 +1014,18 @@ export default function FormalizationFlow() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: '0 8px 24px rgba(0, 158, 227, 0.35)'
+                boxShadow: formalizationPayMethod === 'transferencia'
+                  ? '0 8px 24px rgba(16, 185, 129, 0.35)'
+                  : '0 8px 24px rgba(0, 158, 227, 0.35)'
               }}
             >
               {isProcessingPayment ? (
-                <span>Conectando con Mercado Pago...</span>
+                <span>{formalizationPayMethod === 'transferencia' ? 'Registrando aviso de transferencia...' : 'Conectando con Mercado Pago...'}</span>
+              ) : formalizationPayMethod === 'transferencia' ? (
+                <>
+                  <CheckCircle2 size={18} />
+                  <span>Ya transferí — Solicitar Habilitación al Admin</span>
+                </>
               ) : (
                 <>
                   <CreditCard size={18} />

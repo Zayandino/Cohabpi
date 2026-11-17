@@ -2,7 +2,9 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0
 
 export interface PaymentInfo {
   amount: number
-  method: 'mercadopago' | 'beca_100'
+  method: 'mercadopago' | 'beca_100' | 'transferencia'
+  mpPaymentId?: string
+  statusDetail?: string
 }
 
 export type FulfillResult = 'fulfilled' | 'already_processed'
@@ -48,25 +50,106 @@ export async function fulfillCheckoutSession(
   if (error) throw new Error(`Error leyendo sesión ${sessionId}: ${error.message}`)
   if (!session || session.status === 'completed') return 'already_processed'
 
-  // Bloqueo optimista: solo una ejecución puede pasar de pending -> completed
+  // Bloqueo optimista: solo una ejecución puede pasar a completed
   const { data: locked, error: lockError } = await admin
-    .from('cohab_checkout_sessions').update({ status: 'completed' })
+    .from('cohab_checkout_sessions').update({ status: 'completed', updated_at: new Date().toISOString() })
     .eq('id', sessionId).neq('status', 'completed').select('id')
   if (lockError) throw new Error(`Error completando sesión: ${lockError.message}`)
   if (!locked || locked.length === 0) return 'already_processed'
 
-  await check(admin.from('cohab_payments').insert({
-    profile_id: session.payer_id,
-    amount: payment.amount,
-    status: 'approved',
-    payment_method: payment.method,
-  }), 'registrar pago')
+  // Si ya existía un registro pendiente para esta sesión, actualizarlo; si no, insertar
+  const { data: existingPay } = await admin
+    .from('cohab_payments')
+    .select('id')
+    .eq('checkout_session_id', sessionId)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingPay?.id) {
+    await check(
+      admin.from('cohab_payments').update({
+        amount: payment.amount,
+        status: 'approved',
+        payment_method: payment.method,
+        mp_payment_id: payment.mpPaymentId || null,
+        status_detail: payment.statusDetail || 'accredited',
+        payment_date: new Date().toISOString(),
+      }).eq('id', existingPay.id),
+      'actualizar pago existente'
+    )
+  } else {
+    await check(
+      admin.from('cohab_payments').insert({
+        profile_id: session.payer_id,
+        checkout_session_id: sessionId,
+        amount: payment.amount,
+        status: 'approved',
+        payment_method: payment.method,
+        mp_payment_id: payment.mpPaymentId || null,
+        status_detail: payment.statusDetail || 'accredited',
+        payment_date: new Date().toISOString(),
+      }),
+      'registrar pago'
+    )
+  }
 
   const { months = 1, enrollments = {} } = session.cart_data || {}
   for (const person of resolveEnrollments(enrollments, session.payer_id)) {
     await activatePerson(admin, person.personId, person.serviceIds, months)
   }
   return 'fulfilled'
+}
+
+/**
+ * Registra intentos pendientes o rechazados de Mercado Pago para visibilidad del alumno y del Admin.
+ */
+export async function recordMpPaymentAttempt(
+  admin: SupabaseClient,
+  sessionId: string,
+  attempt: {
+    mpPaymentId: string
+    status: string
+    statusDetail?: string
+    amount: number
+  },
+): Promise<void> {
+  const { data: session } = await admin
+    .from('cohab_checkout_sessions').select('*').eq('id', sessionId).maybeSingle()
+  if (!session || session.status === 'completed') return
+
+  const normalizedStatus = (attempt.status === 'pending' || attempt.status === 'in_process' || attempt.status === 'authorized')
+    ? 'pending'
+    : 'rejected'
+
+  const { data: existing } = await admin
+    .from('cohab_payments')
+    .select('id, status')
+    .eq('checkout_session_id', sessionId)
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.status === 'approved') return
+
+  if (existing?.id) {
+    await admin.from('cohab_payments').update({
+      status: normalizedStatus,
+      mp_payment_id: attempt.mpPaymentId,
+      status_detail: attempt.statusDetail || attempt.status,
+      amount: attempt.amount || session.total_amount,
+      payment_date: new Date().toISOString(),
+    }).eq('id', existing.id)
+  } else {
+    await admin.from('cohab_payments').insert({
+      profile_id: session.payer_id,
+      checkout_session_id: sessionId,
+      amount: attempt.amount || session.total_amount,
+      status: normalizedStatus,
+      payment_method: 'mercadopago',
+      mp_payment_id: attempt.mpPaymentId,
+      status_detail: attempt.statusDetail || attempt.status,
+      payment_date: new Date().toISOString(),
+    })
+  }
 }
 
 async function activatePerson(admin: SupabaseClient, personId: string, serviceIds: string[], months: number) {

@@ -8,6 +8,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Email de la cuenta recaudadora de Mercado Pago (para evitar bloqueo de auto-pago en pruebas del Admin)
+const MP_COLLECTOR_EMAIL = 'ambler.eduardo@gmail.com'
+
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -20,7 +23,16 @@ serve(async (req) => {
   }
 
   try {
-    const { checkout_session_id, payer_id, payer_email, total_amount, origin_url } = await req.json()
+    const {
+      checkout_session_id,
+      payer_id,
+      payer_email,
+      payer_name,
+      total_amount,
+      origin_url,
+      installments,
+      description,
+    } = await req.json()
 
     if (!checkout_session_id || !payer_id || total_amount === undefined || !origin_url) {
       throw new Error("Missing required parameters for payment.")
@@ -46,36 +58,50 @@ serve(async (req) => {
     const accessToken = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) throw new Error('MERCADOPAGO_ACCESS_TOKEN no está configurado')
 
+    // Si el comprador tiene el mismo correo que la cuenta vendedora de Mercado Pago,
+    // usamos un correo alias para que Checkout Pro no bloquee la pantalla por auto-pago.
+    const rawEmail = (payer_email || '').trim().toLowerCase()
+    const safePayerEmail = (!rawEmail || rawEmail === MP_COLLECTOR_EMAIL)
+      ? `alumno.${String(payer_id).slice(0, 8)}@cohablosandes.cloud`
+      : rawEmail
+
     const preference = new Preference(new MercadoPagoConfig({ accessToken }))
 
-    const result = await preference.create({
-      body: {
-        items: [{
-          id: 'suscripcion-cohab',
-          title: 'Suscripciones Cohab Los Andes',
-          quantity: 1,
-          unit_price: Math.round(total_amount),
-          currency_id: 'CLP',
-        }],
-        payer: {
-          email: payer_email || `${payer_id}@cohab.app`
-        },
-        back_urls: {
-          success: returnUrl('aprobado'),
-          failure: returnUrl('rechazado'),
-          pending: returnUrl('pendiente'),
-        },
-        // Valor documentado por Mercado Pago: retorno automático solo en pagos aprobados
-        auto_return: 'approved',
-        // Debe ser una URL pública: Mercado Pago no puede alcanzar la red interna de Docker
-        notification_url: `${getPublicSupabaseUrl()}/functions/v1/mp-webhook`,
-        // El external_reference es el ID de la sesión del carrito
-        external_reference: checkout_session_id,
-        statement_descriptor: 'Cohab Los Andes',
-        expires: true,
-        expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    const prefBody: Record<string, unknown> = {
+      items: [{
+        id: 'suscripcion-cohab',
+        title: description || 'Membresía COHAB Los Andes',
+        description: 'Suscripción de entrenamiento COHAB BJJ Los Andes',
+        category_id: 'services',
+        quantity: 1,
+        unit_price: Math.round(Number(total_amount)),
+        currency_id: 'CLP',
+      }],
+      payer: {
+        email: safePayerEmail,
+        ...(payer_name ? { name: String(payer_name).trim() } : {}),
+      },
+      back_urls: {
+        success: returnUrl('aprobado'),
+        failure: returnUrl('rechazado'),
+        pending: returnUrl('pendiente'),
+      },
+      auto_return: 'approved',
+      binary_mode: false,
+      notification_url: `${getPublicSupabaseUrl()}/functions/v1/mp-webhook`,
+      external_reference: checkout_session_id,
+      statement_descriptor: 'COHAB LOS ANDES',
+      expires: true,
+      expiration_date_to: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    }
+
+    if (installments && Number(installments) > 0) {
+      prefBody.payment_methods = {
+        default_installments: Number(installments),
       }
-    })
+    }
+
+    const result = await preference.create({ body: prefBody as any })
 
     return jsonResponse({
       preference_id: result.id,

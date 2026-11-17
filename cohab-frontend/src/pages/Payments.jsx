@@ -37,10 +37,11 @@ export default function Payments() {
   const [searchParams] = useSearchParams();
   const [discounts, setDiscounts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasPendingPay, setHasPendingPay] = useState(false);
 
-  // Resultado del retorno desde MercadoPago
+  // Resultado del retorno desde MercadoPago o Transferencia Pendiente
   const pagoStatus = searchParams.get('pago'); // 'aprobado' | 'rechazado' | 'pendiente'
-  const banner = PAYMENT_BANNERS[pagoStatus] || null;
+  const banner = PAYMENT_BANNERS[pagoStatus] || (hasPendingPay ? PAYMENT_BANNERS.pendiente : null);
 
   useEffect(() => {
     async function fetchDiscounts() {
@@ -56,6 +57,16 @@ export default function Payments() {
           throw error;
         }
         setDiscounts(data || []);
+
+        if (profile?.id) {
+          const { data: pPay } = await supabase
+            .from('cohab_payments')
+            .select('id')
+            .eq('profile_id', profile.parent_id || profile.id)
+            .eq('status', 'pending')
+            .limit(1);
+          setHasPendingPay(Boolean(pPay && pPay.length > 0));
+        }
       } catch (err) {
         console.error('Error al cargar convenios dinámicos:', err);
       } finally {
@@ -64,7 +75,7 @@ export default function Payments() {
     }
 
     fetchDiscounts();
-  }, []);
+  }, [profile?.id, profile?.parent_id]);
 
   return (
     <div>

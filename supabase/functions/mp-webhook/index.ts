@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 import { MercadoPagoConfig, Payment } from "npm:mercadopago@2.0.8"
 import { createAdminClient } from "../_shared/supabase.ts"
-import { fulfillCheckoutSession } from "../_shared/fulfillment.ts"
+import { fulfillCheckoutSession, recordMpPaymentAttempt } from "../_shared/fulfillment.ts"
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -12,11 +12,11 @@ serve(async (req) => {
     const bodyText = await req.text()
     const notification = bodyText ? JSON.parse(bodyText) : {}
 
-    if (notification.type !== 'payment' && url.searchParams.get('type') !== 'payment') {
+    if (notification.type !== 'payment' && url.searchParams.get('type') !== 'payment' && url.searchParams.get('topic') !== 'payment') {
       return new Response('ok', { status: 200 })
     }
 
-    const paymentId = notification.data?.id || url.searchParams.get('data.id')
+    const paymentId = notification.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id')
     if (!paymentId) {
       return new Response('no payment id', { status: 400 })
     }
@@ -28,13 +28,31 @@ serve(async (req) => {
     const paymentData = await new Payment(new MercadoPagoConfig({ accessToken })).get({ id: paymentId })
     const sessionId = paymentData.external_reference
 
-    if (paymentData.status !== 'approved' || !sessionId) {
-      return json({ ok: true, status: paymentData.status })
+    if (!sessionId) {
+      return json({ ok: true, status: paymentData.status, note: 'no external_reference' })
     }
 
-    const result = await fulfillCheckoutSession(createAdminClient(), sessionId, {
+    const admin = createAdminClient()
+
+    if (paymentData.status !== 'approved') {
+      await recordMpPaymentAttempt(admin, sessionId, {
+        mpPaymentId: String(paymentData.id || paymentId),
+        status: String(paymentData.status || 'rejected'),
+        statusDetail: String(paymentData.status_detail || ''),
+        amount: paymentData.transaction_amount ?? 0,
+      })
+      return json({
+        ok: true,
+        status: paymentData.status,
+        status_detail: paymentData.status_detail,
+      })
+    }
+
+    const result = await fulfillCheckoutSession(admin, sessionId, {
       amount: paymentData.transaction_amount ?? 0,
       method: 'mercadopago',
+      mpPaymentId: String(paymentData.id || paymentId),
+      statusDetail: String(paymentData.status_detail || 'accredited'),
     })
 
     return json({ ok: true, result })

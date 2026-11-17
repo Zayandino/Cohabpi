@@ -53,14 +53,27 @@ export default function AdminDashboard() {
   const [userScholarship, setUserScholarship] = useState(0); // 0, 25, 50, 75, 100
   const [updatingScholarship, setUpdatingScholarship] = useState(false);
   // --- Estados de Membresías, Pagos y Asistencias ---
-  const [membershipSubTab, setMembershipSubTab] = useState('status'); // 'status' | 'payment' | 'attendance'
+  const [membershipSubTab, setMembershipSubTab] = useState('status'); // 'status' | 'payment' | 'attendance' | 'bank'
   const [allProfiles, setAllProfiles] = useState([]);
   const [allServices, setAllServices] = useState([]);
   const [allSubscriptions, setAllSubscriptions] = useState([]);
   const [monthPayments, setMonthPayments] = useState([]);
+  const [pendingPaymentsList, setPendingPaymentsList] = useState([]);
+  const [rejectedPaymentsList, setRejectedPaymentsList] = useState([]);
+  const [approvingPaymentId, setApprovingPaymentId] = useState(null);
   const [loadingMemberships, setLoadingMemberships] = useState(false);
-  const [memberFilter, setMemberFilter] = useState('todos'); // 'todos' | 'vigente' | 'vencido' | 'beca' | 'prueba'
+  const [memberFilter, setMemberFilter] = useState('todos'); // 'todos' | 'vigente' | 'pendiente' | 'vencido' | 'beca' | 'prueba'
   const [memberSearch, setMemberSearch] = useState('');
+  const [bankForm, setBankForm] = useState({
+    bank_name: 'Banco de Chile / BancoEstado',
+    account_type: 'Cuenta Vista / Corriente',
+    account_number: 'Solicitar o verificar en recepción',
+    holder_name: 'Eduardo Javier Ambler Ríos (COHAB Los Andes)',
+    holder_rut: '',
+    confirmation_email: 'ambler.eduardo@gmail.com',
+    instructions: ''
+  });
+  const [savingBankSettings, setSavingBankSettings] = useState(false);
   
   // Formulario de Pago Manual
   const [payStudentId, setPayStudentId] = useState('');
@@ -91,7 +104,9 @@ export default function AdminDashboard() {
 
   // Load initial data based on active tab
   useEffect(() => {
-    if (activeTab === 'news') {
+    if (activeTab === 'menu') {
+      fetchMembershipsOverview();
+    } else if (activeTab === 'news') {
       fetchNews();
     } else if (activeTab === 'academy') {
       fetchVideos();
@@ -689,7 +704,7 @@ export default function AdminDashboard() {
         .eq('status', 'active')
         .order('end_date', { ascending: false });
 
-      // 4. Pagos del mes actual
+      // 4. Pagos del mes actual (aprobados)
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -700,10 +715,56 @@ export default function AdminDashboard() {
         .gte('payment_date', startOfMonth.toISOString())
         .order('payment_date', { ascending: false });
 
+      // 5. Pagos pendientes de aprobación (Transferencias / MP en proceso) y rechazados recientes
+      const { data: pendingPays } = await supabase
+        .from('cohab_payments')
+        .select('*')
+        .eq('status', 'pending')
+        .order('payment_date', { ascending: false });
+
+      const { data: rejectedPays } = await supabase
+        .from('cohab_payments')
+        .select('*')
+        .eq('status', 'rejected')
+        .order('payment_date', { ascending: false })
+        .limit(10);
+
+      // 6. Configuración bancaria para transferencias
+      try {
+        const { data: bData } = await supabase
+          .from('cohab_bank_settings')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+        if (bData) {
+          setBankForm({
+            bank_name: bData.bank_name || '',
+            account_type: bData.account_type || '',
+            account_number: bData.account_number || '',
+            holder_name: bData.holder_name || '',
+            holder_rut: bData.holder_rut || '',
+            confirmation_email: bData.confirmation_email || '',
+            instructions: bData.instructions || ''
+          });
+        }
+      } catch (bErr) {
+        console.warn('No se pudo cargar cohab_bank_settings:', bErr);
+      }
+
       let localScholarships = {};
       try {
         localScholarships = JSON.parse(localStorage.getItem('cohab_scholarships') || '{}');
       } catch (e) {}
+
+      const profileMap = new Map((profilesData || []).map(pr => [pr.id, pr]));
+      const enrichedPendingPays = (pendingPays || []).map(pay => ({
+        ...pay,
+        student: profileMap.get(pay.profile_id) || null
+      }));
+      const enrichedRejectedPays = (rejectedPays || []).map(pay => ({
+        ...pay,
+        student: profileMap.get(pay.profile_id) || null
+      }));
 
       const enrichedProfiles = (profilesData || [])
         .filter(p => p.name.trim() !== 'Sin nombre')
@@ -713,12 +774,15 @@ export default function AdminDashboard() {
           const activeSub = userSubs.find(s => !s.end_date || s.end_date >= todayStr) || null;
           const latestSub = userSubs[0] || null;
           const subService = (servicesData || []).find(srv => srv.id === (activeSub?.service_id || latestSub?.service_id));
+          const pendingPayment = enrichedPendingPays.find(pay => pay.profile_id === p.id) || null;
 
           let computedStatus = 'vencido';
           if (scholarship === 100) {
             computedStatus = 'beca';
           } else if (activeSub) {
             computedStatus = 'vigente';
+          } else if (pendingPayment) {
+            computedStatus = 'pendiente';
           } else if ((p.trial_classes_used || 0) < (p.max_trial_classes || 2) && !latestSub) {
             computedStatus = 'prueba';
           }
@@ -729,6 +793,7 @@ export default function AdminDashboard() {
             activeSub,
             latestSub,
             serviceName: subService?.name || null,
+            pendingPayment,
             computedStatus
           };
         });
@@ -737,6 +802,8 @@ export default function AdminDashboard() {
       setAllServices(servicesData || []);
       setAllSubscriptions(subsData || []);
       setMonthPayments(paymentsData || []);
+      setPendingPaymentsList(enrichedPendingPays);
+      setRejectedPaymentsList(enrichedRejectedPays);
 
       if (!payServiceId && servicesData && servicesData.length > 0) {
         setPayServiceId(servicesData[0].id);
@@ -821,6 +888,127 @@ export default function AdminDashboard() {
       showToast(err?.message || 'Error al registrar pago manual.', 'error');
     } finally {
       setSavingManualPayment(false);
+    }
+  };
+
+  // HABILITAR ALUMNO CON PAGO PENDIENTE (1 CLIC HASTA EL PRÓXIMO MES)
+  const handleApprovePendingPayment = async (paymentId, overrideMonths = null) => {
+    try {
+      setApprovingPaymentId(paymentId);
+      const { data, error } = await supabase.rpc('cohab_approve_pending_payment', {
+        p_payment_id: paymentId,
+        p_override_months: overrideMonths
+      });
+      if (error) throw error;
+      if (data && data.success === false) {
+        throw new Error(data.error || 'Error al aprobar el pago.');
+      }
+      showToast(`¡Alumno habilitado exitosamente hasta ${data?.end_date || 'el próximo mes'}!`, 'success');
+      await fetchMembershipsOverview();
+    } catch (err) {
+      console.error('Error al aprobar pago pendiente:', err);
+      showToast(err?.message || 'Error al habilitar al alumno.', 'error');
+    } finally {
+      setApprovingPaymentId(null);
+    }
+  };
+
+  const handleRejectPendingPayment = async (paymentId) => {
+    if (!window.confirm('¿Seguro que deseas rechazar esta solicitud de pago por transferencia?')) return;
+    try {
+      setApprovingPaymentId(paymentId);
+      const { data, error } = await supabase.rpc('cohab_reject_pending_payment', {
+        p_payment_id: paymentId,
+        p_reason: 'Rechazado por administración'
+      });
+      if (error) throw error;
+      if (data && data.success === false) {
+        throw new Error(data.error || 'Error al rechazar solicitud.');
+      }
+      showToast('Solicitud de pago rechazada.', 'success');
+      await fetchMembershipsOverview();
+    } catch (err) {
+      console.error('Error al rechazar pago:', err);
+      showToast(err?.message || 'Error al rechazar solicitud.', 'error');
+    } finally {
+      setApprovingPaymentId(null);
+    }
+  };
+
+  // HABILITAR DIRECTAMENTE A UN ALUMNO HASTA EL PRÓXIMO MES (1 MES)
+  const handleQuickEnableStudentMonth = async (student) => {
+    if (student.pendingPayment?.id) {
+      await handleApprovePendingPayment(student.pendingPayment.id, 1);
+      return;
+    }
+    const defaultSrv = allServices[0];
+    if (!defaultSrv) {
+      showToast('No hay disciplinas activas configuradas.', 'error');
+      return;
+    }
+    if (!window.confirm(`¿Deseas habilitar a ${student.name} en "${defaultSrv.name}" por 1 mes (hasta el próximo mes) mediante pago por transferencia?`)) {
+      return;
+    }
+    try {
+      setApprovingPaymentId(student.id);
+      const today = new Date();
+      const endDate = new Date(today);
+      endDate.setUTCMonth(endDate.getUTCMonth() + 1);
+      const startDateStr = today.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      const pct = Number(student.scholarship_percent || 0);
+      const amount = Math.round(Number(defaultSrv.price || 45000) * (1 - pct / 100));
+
+      const { error: payErr } = await supabase.from('cohab_payments').insert([{
+        profile_id: student.id,
+        amount,
+        status: 'approved',
+        payment_method: 'transferencia',
+        status_detail: 'quick_enabled_by_admin',
+        payment_date: new Date().toISOString()
+      }]);
+      if (payErr) throw payErr;
+
+      await supabase.from('cohab_profiles').update({ status: 'activo' }).eq('id', student.id);
+
+      const { error: subErr } = await supabase.from('cohab_subscriptions').insert([{
+        profile_id: student.id,
+        service_id: defaultSrv.id,
+        status: 'active',
+        start_date: startDateStr,
+        end_date: endDateStr
+      }]);
+      if (subErr) throw subErr;
+
+      showToast(`¡${student.name} habilitado hasta ${endDateStr}!`, 'success');
+      await fetchMembershipsOverview();
+    } catch (err) {
+      console.error('Error en habilitación rápida:', err);
+      showToast(err?.message || 'Error al habilitar alumno.', 'error');
+    } finally {
+      setApprovingPaymentId(null);
+    }
+  };
+
+  const handleSaveBankSettings = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingBankSettings(true);
+      const { error } = await supabase
+        .from('cohab_bank_settings')
+        .upsert({
+          id: 1,
+          ...bankForm,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      if (error) throw error;
+      showToast('¡Datos bancarios para transferencia actualizados!', 'success');
+    } catch (err) {
+      console.error('Error guardando datos bancarios:', err);
+      showToast(err?.message || 'Error al guardar datos bancarios.', 'error');
+    } finally {
+      setSavingBankSettings(false);
     }
   };
 
@@ -936,6 +1124,44 @@ export default function AdminDashboard() {
                 Selecciona la funcionalidad administrativa para configurar las secciones de la plataforma.
               </p>
             </div>
+
+            {/* Alerta destacada de pagos pendientes de habilitación */}
+            {pendingPaymentsList.length > 0 && (
+              <div
+                onClick={() => {
+                  setActiveTab('memberships');
+                  setMembershipSubTab('status');
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(6, 11, 24, 0.9))',
+                  border: '1px solid rgba(245, 158, 11, 0.5)',
+                  borderRadius: '14px',
+                  padding: '16px 18px',
+                  marginBottom: '20px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  boxShadow: '0 8px 25px rgba(245, 158, 11, 0.15)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.8rem' }}>🔔</span>
+                  <div>
+                    <div style={{ color: '#FBBF24', fontWeight: 900, fontSize: '0.92rem' }}>
+                      {pendingPaymentsList.length} Pago(s) por Transferencia Pendiente(s)
+                    </div>
+                    <div style={{ color: 'var(--text-light)', fontSize: '0.76rem', marginTop: '2px' }}>
+                      Toca aquí para revisar y habilitar al alumno hasta el próximo mes.
+                    </div>
+                  </div>
+                </div>
+                <span style={{ color: '#FBBF24', fontWeight: 900, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                  Revisar →
+                </span>
+              </div>
+            )}
 
             {/* Grid 100% de Configuración de Secciones */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '14px' }}>
@@ -1054,9 +1280,23 @@ export default function AdminDashboard() {
                 <div style={{ padding: '10px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '10px' }}>
                   <CreditCard size={28} color="#10b981" />
                 </div>
-                <div>
-                  <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800 }}>Membresías y Pagos</h4>
-                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.75rem', lineHeight: 1.3 }}>Alumnos al día vs. vencidos, pagos manuales y reporte mensual.</p>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h4 style={{ color: 'white', margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800 }}>Membresías y Pagos</h4>
+                    {pendingPaymentsList.length > 0 && (
+                      <span style={{
+                        background: '#F59E0B',
+                        color: '#060B18',
+                        fontSize: '0.68rem',
+                        fontWeight: 900,
+                        padding: '2px 8px',
+                        borderRadius: '12px'
+                      }}>
+                        {pendingPaymentsList.length} pendiente(s)
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.75rem', lineHeight: 1.3 }}>Habilitar transferencias, alumnos al día vs. vencidos y reporte mensual.</p>
                 </div>
               </div>
 
@@ -1946,6 +2186,27 @@ export default function AdminDashboard() {
 
               <button
                 type="button"
+                onClick={() => setMembershipSubTab('bank')}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid',
+                  borderColor: membershipSubTab === 'bank' ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                  background: membershipSubTab === 'bank' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
+                  color: membershipSubTab === 'bank' ? '#fbbf24' : 'rgba(255,255,255,0.7)',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                🏦 Datos Transferencia
+              </button>
+
+              <button
+                type="button"
                 onClick={fetchMembershipsOverview}
                 title="Refrescar datos"
                 style={{
@@ -1973,6 +2234,117 @@ export default function AdminDashboard() {
                 {/* SUBTAB 1: ESTADO DE ALUMNOS */}
                 {membershipSubTab === 'status' && (
                   <div>
+                    {/* BANDEJA DE HABILITACIÓN RÁPIDA: PAGOS POR TRANSFERENCIA PENDIENTES */}
+                    {pendingPaymentsList.length > 0 && (
+                      <div style={{
+                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(6, 11, 24, 0.92))',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        borderRadius: '16px',
+                        padding: '20px',
+                        marginBottom: '24px',
+                        boxShadow: '0 8px 30px rgba(245, 158, 11, 0.12)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '1.5rem' }}>🔔</span>
+                            <div>
+                              <h3 style={{ margin: 0, color: '#FBBF24', fontSize: '1.05rem', fontWeight: 900 }}>
+                                Solicitudes de Pago por Transferencia Pendientes ({pendingPaymentsList.length})
+                              </h3>
+                              <p style={{ margin: '2px 0 0', color: 'rgba(255,255,255,0.7)', fontSize: '0.78rem' }}>
+                                Revisa el comprobante en tu banco y presiona <strong>Habilitar hasta el Próximo Mes</strong> para activar la membresía del alumno.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {pendingPaymentsList.map(pay => {
+                            const isBusy = approvingPaymentId === pay.id;
+                            const studentName = pay.student?.name || 'Alumno';
+                            const studentEmail = pay.student?.email || '';
+                            const dateFormatted = pay.payment_date ? new Date(pay.payment_date).toLocaleString('es-CL') : '';
+                            return (
+                              <div
+                                key={pay.id}
+                                style={{
+                                  background: 'rgba(0,0,0,0.35)',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '12px',
+                                  padding: '14px 16px',
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '12px'
+                                }}
+                              >
+                                <div>
+                                  <div style={{ color: 'white', fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span>{studentName}</span>
+                                    <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(16,185,129,0.2)', color: '#34D399', fontWeight: 900 }}>
+                                      ${Number(pay.amount || 0).toLocaleString('es-CL')} CLP
+                                    </span>
+                                    <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(245,158,11,0.2)', color: '#FBBF24', fontWeight: 800 }}>
+                                      {pay.payment_method === 'transferencia' ? '🏦 Transferencia' : '💳 Mercado Pago'}
+                                    </span>
+                                  </div>
+                                  <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.76rem', marginTop: '3px' }}>
+                                    {studentEmail} • Informado: {dateFormatted}
+                                  </div>
+                                  {pay.notes && (
+                                    <div style={{ color: '#60A5FA', fontSize: '0.76rem', marginTop: '4px', fontWeight: 700 }}>
+                                      📝 Nota / Comprobante: {pay.notes}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => handleApprovePendingPayment(pay.id)}
+                                    style={{
+                                      background: 'linear-gradient(135deg, #10B981, #059669)',
+                                      border: 'none',
+                                      color: '#060B18',
+                                      fontWeight: 900,
+                                      fontSize: '0.8rem',
+                                      padding: '9px 14px',
+                                      borderRadius: '8px',
+                                      cursor: isBusy ? 'not-allowed' : 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px'
+                                    }}
+                                  >
+                                    <span>✅ {isBusy ? 'Habilitando...' : 'Habilitar hasta el Próximo Mes'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => handleRejectPendingPayment(pay.id)}
+                                    style={{
+                                      background: 'rgba(239, 68, 68, 0.15)',
+                                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                                      color: '#F87171',
+                                      fontWeight: 800,
+                                      fontSize: '0.78rem',
+                                      padding: '9px 12px',
+                                      borderRadius: '8px',
+                                      cursor: isBusy ? 'not-allowed' : 'pointer'
+                                    }}
+                                  >
+                                    ❌ Rechazar
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Tarjetas métricas superiores */}
                     {(() => {
                       const vigentesCount = allProfiles.filter(p => p.computedStatus === 'vigente' || p.computedStatus === 'beca').length;
@@ -2060,6 +2432,7 @@ export default function AdminDashboard() {
                         {[
                           { key: 'todos', label: 'Todos' },
                           { key: 'vigente', label: '✅ Vigentes' },
+                          { key: 'pendiente', label: `⏳ Pago Pendiente (${allProfiles.filter(p => p.computedStatus === 'pendiente').length})` },
                           { key: 'vencido', label: '⚠️ Vencidos' },
                           { key: 'beca', label: '🎓 Becados 100%' },
                           { key: 'prueba', label: '🥋 En Prueba' }
@@ -2136,11 +2509,14 @@ export default function AdminDashboard() {
                             const isVigente = st.computedStatus === 'vigente';
                             const isBeca = st.computedStatus === 'beca';
                             const isPrueba = st.computedStatus === 'prueba';
+                            const isPendiente = st.computedStatus === 'pendiente';
 
                             const badgeBg = isBeca
                               ? 'rgba(236, 72, 153, 0.2)'
                               : isVigente
                               ? 'rgba(16, 185, 129, 0.2)'
+                              : isPendiente
+                              ? 'rgba(245, 158, 11, 0.25)'
                               : isPrueba
                               ? 'rgba(245, 158, 11, 0.2)'
                               : 'rgba(239, 68, 68, 0.2)';
@@ -2149,6 +2525,8 @@ export default function AdminDashboard() {
                               ? '#f472b6'
                               : isVigente
                               ? '#34d399'
+                              : isPendiente
+                              ? '#fbbf24'
                               : isPrueba
                               ? '#fbbf24'
                               : '#f87171';
@@ -2157,6 +2535,8 @@ export default function AdminDashboard() {
                               ? 'rgba(236, 72, 153, 0.4)'
                               : isVigente
                               ? 'rgba(16, 185, 129, 0.4)'
+                              : isPendiente
+                              ? 'rgba(245, 158, 11, 0.5)'
                               : isPrueba
                               ? 'rgba(245, 158, 11, 0.4)'
                               : 'rgba(239, 68, 68, 0.4)';
@@ -2165,6 +2545,8 @@ export default function AdminDashboard() {
                               ? '🎓 Beca 100%'
                               : isVigente
                               ? '✅ Al Día'
+                              : isPendiente
+                              ? '⏳ Pago Pendiente'
                               : isPrueba
                               ? `🥋 Prueba (${st.trial_classes_used || 0}/${st.max_trial_classes || 2})`
                               : '⚠️ Vencido';
@@ -2241,6 +2623,30 @@ export default function AdminDashboard() {
                                       {st.serviceName && ` (${st.serviceName})`}
                                     </div>
                                   </div>
+
+                                  {!isVigente && !isBeca && (
+                                    <button
+                                      type="button"
+                                      disabled={approvingPaymentId === (st.pendingPayment?.id || st.id)}
+                                      onClick={() => handleQuickEnableStudentMonth(st)}
+                                      style={{
+                                        background: isPendiente ? 'linear-gradient(135deg, #10B981, #059669)' : 'rgba(59, 130, 246, 0.15)',
+                                        border: isPendiente ? 'none' : '1px solid rgba(59, 130, 246, 0.4)',
+                                        color: isPendiente ? '#060B18' : '#60A5FA',
+                                        padding: '8px 14px',
+                                        borderRadius: '8px',
+                                        fontWeight: 800,
+                                        fontSize: '0.82rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                      }}
+                                      title="Habilita al alumno por 1 mes (hasta el próximo mes)"
+                                    >
+                                      ✅ {isPendiente ? 'Habilitar Solicitud (1 Mes)' : 'Habilitar 1 Mes'}
+                                    </button>
+                                  )}
 
                                   <button
                                     type="button"
@@ -2472,6 +2878,136 @@ export default function AdminDashboard() {
                           }}
                         >
                           Volver
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* SUBTAB 4: DATOS BANCARIOS PARA TRANSFERENCIA */}
+                {membershipSubTab === 'bank' && (
+                  <div style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '16px',
+                    padding: '28px',
+                    maxWidth: '680px',
+                    margin: '0 auto'
+                  }}>
+                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: 'white' }}>
+                      🏦 Configurar Datos Bancarios para Transferencias
+                    </h3>
+                    <p style={{ margin: '0 0 24px 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>
+                      Estos datos se muestran a los alumnos y apoderados cuando seleccionan pagar su membresía mediante Transferencia Bancaria.
+                    </p>
+
+                    <form onSubmit={handleSaveBankSettings} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                          Nombre del Titular / Academia
+                        </label>
+                        <input
+                          type="text"
+                          value={bankForm.holder_name}
+                          onChange={(e) => setBankForm(prev => ({ ...prev, holder_name: e.target.value }))}
+                          required
+                          className="form-input"
+                          style={{ background: '#18181b', color: 'white' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            RUT del Titular
+                          </label>
+                          <input
+                            type="text"
+                            value={bankForm.holder_rut}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, holder_rut: e.target.value }))}
+                            placeholder="Ej: 12.345.678-9"
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            Banco
+                          </label>
+                          <input
+                            type="text"
+                            value={bankForm.bank_name}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, bank_name: e.target.value }))}
+                            required
+                            placeholder="Ej: Banco de Chile / BancoEstado"
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            Tipo de Cuenta
+                          </label>
+                          <input
+                            type="text"
+                            value={bankForm.account_type}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, account_type: e.target.value }))}
+                            required
+                            placeholder="Ej: Cuenta Corriente / Cuenta Vista"
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            Número de Cuenta
+                          </label>
+                          <input
+                            type="text"
+                            value={bankForm.account_number}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, account_number: e.target.value }))}
+                            required
+                            placeholder="Ej: 00-123-45678-9"
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                          Correo de Confirmación
+                        </label>
+                        <input
+                          type="email"
+                          value={bankForm.confirmation_email}
+                          onChange={(e) => setBankForm(prev => ({ ...prev, confirmation_email: e.target.value }))}
+                          required
+                          className="form-input"
+                          style={{ background: '#18181b', color: 'white' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                        <button
+                          type="submit"
+                          disabled={savingBankSettings}
+                          style={{
+                            flex: 1,
+                            padding: '12px 20px',
+                            borderRadius: '8px',
+                            background: '#10b981',
+                            color: '#060B18',
+                            fontWeight: 900,
+                            fontSize: '0.9rem',
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {savingBankSettings ? 'Guardando...' : '💾 Guardar Datos Bancarios'}
                         </button>
                       </div>
                     </form>
