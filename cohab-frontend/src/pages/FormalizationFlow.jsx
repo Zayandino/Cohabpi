@@ -7,6 +7,7 @@ import {
   ArrowRight, ArrowLeft, RefreshCw, CreditCard, Clock, 
   Award, Sparkles, ChevronDown, ChevronUp, Info
 } from 'lucide-react';
+import { notifyAdminTransferReported } from '../utils/whatsappNotifications';
 
 export default function FormalizationFlow() {
   const { user, profile, refreshProfile } = useAuth();
@@ -342,6 +343,17 @@ export default function FormalizationFlow() {
         if (rpcData && rpcData.success === false) {
           throw new Error(rpcData.error || 'No se pudo registrar el aviso de transferencia.');
         }
+
+        // Notificar al Administrador vía WhatsApp (no bloqueante)
+        notifyAdminTransferReported({
+          studentName: selectedStudent?.name || profile?.name || 'Alumno',
+          studentEmail: profile?.email || user?.email,
+          studentPhone: profile?.phone,
+          amount: finalAmount,
+          notes: combinedNotes,
+          bankPhone: bankDetails?.whatsapp_notification_phone
+        }).catch(e => console.warn('Error notificando admin vía WhatsApp:', e));
+
         navigate('/dashboard?pago=pendiente');
         return;
       }

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { LogOut, ArrowLeft, Plus, Calendar, Users, QrCode, Settings, Trash2, Edit2, CreditCard, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { notifyAdminTransferReported } from '../utils/whatsappNotifications';
 
 const formats = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
 
@@ -549,6 +550,16 @@ export default function Profile() {
         if (rpcData && rpcData.success === false) {
           throw new Error(rpcData.error || 'No se pudo registrar el aviso de transferencia.');
         }
+
+        // Notificar al Administrador vía WhatsApp (no bloqueante)
+        notifyAdminTransferReported({
+          studentName: profile?.name || 'Alumno',
+          studentEmail: profile?.email,
+          studentPhone: profile?.phone,
+          amount: totals.finalTotal,
+          notes: combinedNotes,
+          bankPhone: bankSettings?.whatsapp_notification_phone
+        }).catch(e => console.warn('Error notificando admin vía WhatsApp:', e));
 
         setShowCheckoutModal(false);
         setIsProcessing(false);

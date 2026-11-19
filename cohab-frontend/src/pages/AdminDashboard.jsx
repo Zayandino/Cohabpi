@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Newspaper, PlayCircle, Tag, Award, Gift, Plus, Trash2, 
-  Search, ShieldCheck, CheckCircle2, AlertCircle, Save, Sparkles, CreditCard
+  Search, ShieldCheck, CheckCircle2, AlertCircle, Save, Sparkles, CreditCard,
+  QrCode, Phone, MessageSquare
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { notifyStudentPaymentApproved, getWhatsAppStatus } from '../utils/whatsappNotifications';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -71,9 +73,13 @@ export default function AdminDashboard() {
     holder_name: 'Eduardo Javier Ambler Ríos',
     holder_rut: '16.851.618-5',
     confirmation_email: 'ambler.eduardo@gmail.com',
+    whatsapp_notification_phone: '+56957394280',
     instructions: ''
   });
   const [savingBankSettings, setSavingBankSettings] = useState(false);
+  const [wsStatus, setWsStatus] = useState({ connected: false, status: 'loading', qrcode: null });
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [loadingQr, setLoadingQr] = useState(false);
   
   // Formulario de Pago Manual
   const [payStudentId, setPayStudentId] = useState('');
@@ -744,6 +750,7 @@ export default function AdminDashboard() {
             holder_name: bData.holder_name || '',
             holder_rut: bData.holder_rut || '',
             confirmation_email: bData.confirmation_email || '',
+            whatsapp_notification_phone: bData.whatsapp_notification_phone || '+56957394280',
             instructions: bData.instructions || ''
           });
         }
@@ -951,6 +958,9 @@ export default function AdminDashboard() {
   const handleApprovePendingPayment = async (paymentId, overrideMonths = null) => {
     try {
       setApprovingPaymentId(paymentId);
+      const pendingItem = pendingPaymentsList.find(p => p.id === paymentId);
+      const student = allProfiles.find(p => p.id === pendingItem?.profile_id);
+
       const { data, error } = await supabase.rpc('cohab_approve_pending_payment', {
         p_payment_id: paymentId,
         p_override_months: overrideMonths
@@ -960,6 +970,17 @@ export default function AdminDashboard() {
         throw new Error(data.error || 'Error al aprobar el pago.');
       }
       showToast(`¡Alumno habilitado exitosamente hasta ${data?.end_date || 'el próximo mes'}!`, 'success');
+
+      // Notificar al Alumno vía WhatsApp automáticamente
+      if (student?.phone) {
+        notifyStudentPaymentApproved({
+          studentName: student.name,
+          studentPhone: student.phone,
+          amount: pendingItem?.amount,
+          validUntil: data?.end_date
+        }).catch(e => console.warn('Error notificando alumno vía WhatsApp:', e));
+      }
+
       await fetchMembershipsOverview();
     } catch (err) {
       console.error('Error al aprobar pago pendiente:', err);
@@ -1039,6 +1060,17 @@ export default function AdminDashboard() {
       if (subErr) throw subErr;
 
       showToast(`¡${student.name} habilitado hasta ${endDateStr}!`, 'success');
+
+      // Notificar al alumno vía WhatsApp
+      if (student?.phone) {
+        notifyStudentPaymentApproved({
+          studentName: student.name,
+          studentPhone: student.phone,
+          amount,
+          validUntil: endDateStr
+        }).catch(e => console.warn('Error notificando alumno vía WhatsApp:', e));
+      }
+
       await fetchMembershipsOverview();
     } catch (err) {
       console.error('Error en habilitación rápida:', err);
@@ -1047,6 +1079,25 @@ export default function AdminDashboard() {
       setApprovingPaymentId(null);
     }
   };
+
+  const checkWhatsAppConnection = async () => {
+    try {
+      setLoadingQr(true);
+      const res = await getWhatsAppStatus();
+      setWsStatus(res || { connected: false, status: 'close' });
+      return res;
+    } catch (err) {
+      console.error('Error verificando WhatsApp:', err);
+    } finally {
+      setLoadingQr(false);
+    }
+  };
+
+  useEffect(() => {
+    if (membershipSubTab === 'bank') {
+      checkWhatsAppConnection();
+    }
+  }, [membershipSubTab]);
 
   const handleSaveBankSettings = async (e) => {
     e.preventDefault();
@@ -3147,18 +3198,33 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
-                          Correo de Confirmación
-                        </label>
-                        <input
-                          type="email"
-                          value={bankForm.confirmation_email}
-                          onChange={(e) => setBankForm(prev => ({ ...prev, confirmation_email: e.target.value }))}
-                          required
-                          className="form-input"
-                          style={{ background: '#18181b', color: 'white' }}
-                        />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            Correo de Confirmación
+                          </label>
+                          <input
+                            type="email"
+                            value={bankForm.confirmation_email}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, confirmation_email: e.target.value }))}
+                            required
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                            WhatsApp Admin para Alertas
+                          </label>
+                          <input
+                            type="text"
+                            value={bankForm.whatsapp_notification_phone || ''}
+                            onChange={(e) => setBankForm(prev => ({ ...prev, whatsapp_notification_phone: e.target.value }))}
+                            placeholder="+56957394280"
+                            className="form-input"
+                            style={{ background: '#18181b', color: 'white' }}
+                          />
+                        </div>
                       </div>
 
                       <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
@@ -3181,6 +3247,90 @@ export default function AdminDashboard() {
                         </button>
                       </div>
                     </form>
+
+                    {/* TARJETA DE CONEXIÓN WHATSAPP EVOLUTION API */}
+                    <div style={{
+                      marginTop: '32px',
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(18, 140, 126, 0.05))',
+                      border: '1px solid rgba(37, 211, 102, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '1.4rem' }}>💬</span>
+                          <div>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'white' }}>
+                              Notificaciones Automáticas vía WhatsApp
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)' }}>
+                              Envío directo al WhatsApp de alumnos (confirmación de pago) y al admin (aviso de transferencias).
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            background: wsStatus.connected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: wsStatus.connected ? '#34d399' : '#f87171',
+                            border: `1px solid ${wsStatus.connected ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`
+                          }}>
+                            {wsStatus.connected ? '🟢 Conectado' : '🔴 Desconectado'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => { setShowQrModal(true); checkWhatsAppConnection(); }}
+                          style={{
+                            padding: '9px 16px',
+                            borderRadius: '8px',
+                            background: '#25D366',
+                            color: '#060B18',
+                            fontWeight: 800,
+                            fontSize: '0.82rem',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <QrCode size={16} />
+                          {wsStatus.connected ? 'Ver Estado / Reconectar QR' : '📱 Vincular WhatsApp (Escanear QR)'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={checkWhatsAppConnection}
+                          disabled={loadingQr}
+                          style={{
+                            padding: '9px 14px',
+                            borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: 'white',
+                            fontWeight: 600,
+                            fontSize: '0.82rem',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {loadingQr ? 'Verificando...' : '🔄 Actualizar Estado'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -3376,6 +3526,129 @@ export default function AdminDashboard() {
         )}
 
       </div>
+
+      {/* MODAL CÓDIGO QR PARA VINCULAR WHATSAPP */}
+      {showQrModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#121727',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: '20px',
+            padding: '28px',
+            maxWidth: '440px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+          }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '1.25rem', color: 'white', fontWeight: 800 }}>
+              📱 Vincular WhatsApp COHAB
+            </h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+              Escanea este código desde la app de WhatsApp en tu teléfono para habilitar los avisos automáticos.
+            </p>
+
+            {loadingQr ? (
+              <div style={{ padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+                Generando código QR...
+              </div>
+            ) : wsStatus.connected ? (
+              <div style={{
+                padding: '30px 20px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: '12px',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>✅</div>
+                <div style={{ fontWeight: 800, color: '#34d399', fontSize: '1rem' }}>
+                  ¡WhatsApp se encuentra Conectado!
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginTop: '4px' }}>
+                  Las notificaciones de transferencias y pagos se están enviando con normalidad.
+                </div>
+              </div>
+            ) : wsStatus.qrcode ? (
+              <div style={{
+                background: 'white',
+                padding: '16px',
+                borderRadius: '12px',
+                display: 'inline-block',
+                margin: '0 auto 16px auto',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
+              }}>
+                <img
+                  src={wsStatus.qrcode}
+                  alt="Código QR WhatsApp COHAB"
+                  style={{ width: '240px', height: '240px', display: 'block' }}
+                />
+              </div>
+            ) : (
+              <div style={{ padding: '30px', color: '#f87171', fontSize: '0.88rem' }}>
+                No se pudo generar el código QR. Haz clic en "Actualizar" para reintentar.
+              </div>
+            )}
+
+            <div style={{ textAlign: 'left', background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: '10px', marginBottom: '20px', fontSize: '0.78rem', color: 'rgba(255,255,255,0.75)' }}>
+              <div style={{ fontWeight: 700, color: 'white', marginBottom: '6px' }}>Pasos para vincular:</div>
+              <div>1. Abre WhatsApp en tu celular.</div>
+              <div>2. Toca <b>Menú (⋮)</b> o <b>Configuración</b> → <b>Dispositivos vinculados</b>.</div>
+              <div>3. Toca <b>Vincular un dispositivo</b>.</div>
+              <div>4. Apunta tu teléfono hacia este código QR.</div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={checkWhatsAppConnection}
+                disabled={loadingQr}
+                style={{
+                  flex: 1,
+                  padding: '11px',
+                  borderRadius: '10px',
+                  background: 'rgba(255,255,255,0.1)',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Actualizar
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '11px',
+                  borderRadius: '10px',
+                  background: '#3b82f6',
+                  color: 'white',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
